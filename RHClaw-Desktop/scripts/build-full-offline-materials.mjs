@@ -322,6 +322,16 @@ async function downloadFile(url, outputPath, validator) {
 }
 
 function resolvePackageVersion() {
+  // If an explicit version is provided (not 'latest'), skip network query
+  if (openclawVersionInput !== 'latest') {
+    const normalizedVersion = normalizeVersion(openclawVersionInput);
+    return {
+      version: normalizedVersion,
+      registry: npmRegistryCandidates[0] || 'https://registry.npmjs.org',
+    };
+  }
+
+  // For 'latest', query from npm registry
   const { registry, result } = runWithRegistryCandidates(
     (candidateRegistry) => run('npm', [
       '--silent',
