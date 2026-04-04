@@ -97,6 +97,8 @@ jobs:
       RHOPENCLAW_NPM_REGISTRY: https://registry.npmjs.org
       RHOPENCLAW_NODE_MIRROR: https://nodejs.org/dist
       RHOPENCLAW_CHANNEL_ROOT: ${{ github.workspace }}/RHClaw-Channel
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY_PASSWORD }}
     defaults:
       run:
         shell: pwsh
@@ -127,15 +129,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Configure updater signing
-        if: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY != '' }}
-        run: |
-          "TAURI_SIGNING_PRIVATE_KEY=$env:RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY" >> $env:GITHUB_ENV
-          "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$env:RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY_PASSWORD" >> $env:GITHUB_ENV
-        env:
-          RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY }}
-          RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY_PASSWORD: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY_PASSWORD }}
 
       - name: Build desktop package (windows x64)
         run: npm run desktop:package:win:x64
