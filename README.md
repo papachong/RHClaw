@@ -1,5 +1,7 @@
 # RHClaw
 
+[中文](README.zh-CN.md) | English
+
 RHClaw is the public open-source workspace for the RHClaw desktop client and related components.
 
 ## Current Scope
