@@ -144,16 +144,21 @@ function runWithRegistryCandidates(commandBuilder, label) {
 
   for (const registry of npmRegistryCandidates) {
     try {
+      console.log(`[DEBUG] Trying ${label} from registry: ${registry}`);
+      const result = commandBuilder(registry);
+      console.log(`[DEBUG] SUCCESS from ${registry}: ${result}`);
       return {
         registry,
-        result: commandBuilder(registry),
+        result,
       };
     } catch (error) {
-      failures.push(`${registry}: ${formatError(error)}`);
+      const detail = formatError(error);
+      console.warn(`[WARN] Failed to ${label} from ${registry}: ${detail}`);
+      failures.push(`${registry}: ${detail}`);
     }
   }
 
-  throw new Error(`${label} failed for all registries: ${failures.join(' | ')}`);
+  throw new Error(`${label} failed for all registries:\n${failures.map(f => `  - ${f}`).join('\n')}`);
 }
 
 async function downloadFromUrlCandidates(urls, outputPath, validator, label) {
@@ -322,16 +327,6 @@ async function downloadFile(url, outputPath, validator) {
 }
 
 function resolvePackageVersion() {
-  // If an explicit version is provided (not 'latest'), skip network query
-  if (openclawVersionInput !== 'latest') {
-    const normalizedVersion = normalizeVersion(openclawVersionInput);
-    return {
-      version: normalizedVersion,
-      registry: npmRegistryCandidates[0] || 'https://registry.npmjs.org',
-    };
-  }
-
-  // For 'latest', query from npm registry
   const { registry, result } = runWithRegistryCandidates(
     (candidateRegistry) => run('npm', [
       '--silent',
