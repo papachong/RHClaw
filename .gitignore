@@ -1,6 +1,9 @@
 .DS_Store
 *.log
 
+# Internal planning docs (not part of open-source release)
+docs/
+
 RHClaw-Desktop/node_modules/
 RHClaw-Desktop/dist/
 RHClaw-Desktop/coverage/
