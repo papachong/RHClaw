@@ -12,6 +12,8 @@ RHClaw-Desktop/src-tauri/target/
 RHClaw-Desktop/.env
 RHClaw-Desktop/.env.*
 !RHClaw-Desktop/.env.example
+RHClaw-Desktop/.tauri-signing-key
+RHClaw-Desktop/.tauri-signing-key.pub
 
 RHClaw-Channel/node_modules/
 RHClaw-Channel/*.tgz

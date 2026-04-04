@@ -33,7 +33,6 @@ jobs:
       RHOPENCLAW_NODE_MIRROR: https://nodejs.org/dist
       RHOPENCLAW_CHANNEL_ROOT: ${{ github.workspace }}/RHClaw-Channel
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY_PASSWORD }}
     strategy:
       fail-fast: false
       matrix:
@@ -94,7 +93,6 @@ jobs:
       RHOPENCLAW_NODE_MIRROR: https://nodejs.org/dist
       RHOPENCLAW_CHANNEL_ROOT: ${{ github.workspace }}/RHClaw-Channel
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY_PASSWORD }}
     defaults:
       run:
         shell: pwsh
