@@ -1,0 +1,68 @@
+{
+  "name": "@rhopenclaw/rhclaw-channel",
+  "version": "1.0.3",
+  "description": "RHClaw Channel plugin for OpenClaw Gateway",
+  "type": "module",
+  "private": false,
+  "keywords": [
+    "openclaw",
+    "rhclaw",
+    "channel-plugin",
+    "gateway"
+  ],
+  "license": "MIT",
+  "files": [
+    "index.ts",
+    "openclaw.plugin.json",
+    "README.md",
+    "src/"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "rhclaw",
+      "label": "RHClaw Channel",
+      "selectionLabel": "RHClaw Channel",
+      "docsPath": "/channels/rhclaw",
+      "docsLabel": "rhclaw",
+      "blurb": "RHClaw custom channel bridge for OpenClaw Gateway.",
+      "order": 95,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "@rhopenclaw/rhclaw-channel",
+      "localPath": "RHClaw-Channel",
+      "defaultChoice": "npm"
+    }
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.1",
+    "socket.io-parser": "^4.2.6"
+  },
+  "bundledDependencies": [
+    "socket.io-client",
+    "engine.io-client",
+    "engine.io-parser",
+    "socket.io-parser",
+    "ws",
+    "xmlhttprequest-ssl",
+    "debug",
+    "ms",
+    "@socket.io/component-emitter"
+  ],
+  "peerDependencies": {
+    "openclaw": ">=2026.3.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "openclaw": "2026.4.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/**/*.test.ts"
+  }
+}

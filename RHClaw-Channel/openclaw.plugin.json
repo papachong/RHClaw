@@ -1,0 +1,74 @@
+{
+  "id": "rhclaw-channel",
+  "channels": ["rhclaw"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "connectionMode": {
+        "type": "string",
+        "enum": [
+          "websocket",
+          "polling"
+        ]
+      },
+      "serverUrl": {
+        "type": "string"
+      },
+      "deviceSocketUrl": {
+        "type": "string"
+      },
+      "deviceId": {
+        "type": "string"
+      },
+      "deviceName": {
+        "type": "string"
+      },
+      "defaultAgentId": {
+        "type": "string"
+      },
+      "heartbeatIntervalSec": {
+        "type": "integer",
+        "minimum": 5
+      },
+      "ackTimeoutSec": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "resultTimeoutSec": {
+        "type": "integer",
+        "minimum": 5
+      },
+      "allowFrom": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "dmPolicy": {
+        "type": "string"
+      },
+      "groupPolicy": {
+        "type": "string"
+      },
+      "gatewayTokenRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
