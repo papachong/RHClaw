@@ -3,6 +3,7 @@
 [中文](README.zh-CN.md) | English
 
 RHClaw makes shrimp farming effortless — one-click fully offline installation, automatic OpenClaw configuration, and WeChat Mini Program integration. Secure, reliable, multi-agent collaboration with shared memory. Start your private lobster army today! 🦐🦐
+For the full application, visit the [RHClaw official website](https://rhclaw.ruhooai.com).
 
 ## Current Modules
 
