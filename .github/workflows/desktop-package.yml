@@ -1,0 +1,263 @@
+name: RHClaw Desktop Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      enforce_release_gate:
+        description: Enforce full artifact coverage after report generation
+        required: false
+        default: false
+        type: boolean
+      require_manifest_signature:
+        description: Also require manifestSignature when enforcing release gate
+        required: false
+        default: false
+        type: boolean
+      publish_github_release:
+        description: Publish artifacts to GitHub Release (manual runs only)
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+      - "desktop-v*"
+
+jobs:
+  build-desktop-package-macos:
+    runs-on: macos-latest
+    env:
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/RHClaw-Desktop/.npmrc.ci
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY_PASSWORD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            script: desktop:package:mac:arm64
+            artifact_name: rhclaw-desktop-macos-arm64-bundle
+            bundle_path: RHClaw-Desktop/src-tauri/target/aarch64-apple-darwin/release/bundle
+          - arch: x64
+            script: desktop:package:mac:x64
+            artifact_name: rhclaw-desktop-macos-x64-bundle
+            bundle_path: RHClaw-Desktop/src-tauri/target/x86_64-apple-darwin/release/bundle
+    defaults:
+      run:
+        shell: bash
+        working-directory: RHClaw-Desktop
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: RHClaw-Desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Prepare npm registry config
+        run: |
+          cat > .npmrc.ci <<'EOF2'
+          registry=https://registry.npmjs.org/
+          always-auth=false
+          EOF2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build desktop package (${{ matrix.arch }})
+        run: npm run ${{ matrix.script }}
+
+      - name: Upload desktop bundle (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.bundle_path }}
+          if-no-files-found: error
+
+  build-desktop-package-windows:
+    runs-on: windows-latest
+    env:
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/RHClaw-Desktop/.npmrc.ci
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY_PASSWORD }}
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: RHClaw-Desktop
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: RHClaw-Desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Prepare npm registry config
+        run: |
+          @"
+          registry=https://registry.npmjs.org/
+          always-auth=false
+          "@ | Set-Content -Path .npmrc.ci
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build desktop package (windows x64)
+        run: npm run desktop:package:win:x64
+
+      - name: Upload desktop bundle (windows x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rhclaw-desktop-windows-x64-bundle
+          path: RHClaw-Desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle
+          if-no-files-found: error
+
+  assemble-release-report:
+    runs-on: ubuntu-latest
+    env:
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/RHClaw-Desktop/.npmrc.ci
+      RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY: ${{ secrets.RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY }}
+      RHOPENCLAW_RELEASE_MANIFEST_PUBLIC_KEY: ${{ secrets.RHOPENCLAW_RELEASE_MANIFEST_PUBLIC_KEY }}
+    needs:
+      - build-desktop-package-macos
+      - build-desktop-package-windows
+    defaults:
+      run:
+        shell: bash
+        working-directory: RHClaw-Desktop
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: RHClaw-Desktop/package-lock.json
+
+      - name: Prepare npm registry config
+        run: |
+          cat > .npmrc.ci <<'EOF2'
+          registry=https://registry.npmjs.org/
+          always-auth=false
+          EOF2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download macOS arm64 bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: rhclaw-desktop-macos-arm64-bundle
+          path: RHClaw-Desktop/src-tauri/target/aarch64-apple-darwin/release/bundle
+
+      - name: Download macOS x64 bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: rhclaw-desktop-macos-x64-bundle
+          path: RHClaw-Desktop/src-tauri/target/x86_64-apple-darwin/release/bundle
+
+      - name: Download Windows x64 bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: rhclaw-desktop-windows-x64-bundle
+          path: RHClaw-Desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle
+
+      - name: Generate release report
+        run: npm run release:report
+
+      - name: Generate release summary
+        run: npm run release:summary
+
+      - name: Publish manifest signing status
+        run: |
+          if [[ -n "${RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY}" && -n "${RHOPENCLAW_RELEASE_MANIFEST_PUBLIC_KEY}" ]]; then
+            echo "- Manifest signing: enabled via GitHub Actions secrets" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Manifest signing: disabled (missing RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY / RHOPENCLAW_RELEASE_MANIFEST_PUBLIC_KEY secrets)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Publish release summary
+        run: cat release/release-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce release gate
+        if: ${{ inputs.enforce_release_gate }}
+        run: npm run release:gate -- --require-signature=${{ inputs.require_manifest_signature }}
+
+      - name: Upload release manifest bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: rhclaw-desktop-release-report
+          path: |
+            RHClaw-Desktop/release/release-manifest.json
+            RHClaw-Desktop/release/updater/**/latest.json
+            RHClaw-Desktop/release/release-validation-report.json
+            RHClaw-Desktop/release/release-summary.md
+          if-no-files-found: error
+
+  publish-github-release:
+    runs-on: ubuntu-latest
+    needs:
+      - build-desktop-package-macos
+      - build-desktop-package-windows
+      - assemble-release-report
+    if: ${{ startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish_github_release) }}
+    permissions:
+      contents: write
+    steps:
+      - name: Download release report artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rhclaw-desktop-release-report
+          path: dist/release-report
+
+      - name: Download macOS arm64 bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rhclaw-desktop-macos-arm64-bundle
+          path: dist/macos-arm64
+
+      - name: Download macOS x64 bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rhclaw-desktop-macos-x64-bundle
+          path: dist/macos-x64
+
+      - name: Download windows x64 bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rhclaw-desktop-windows-x64-bundle
+          path: dist/windows-x64
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: |
+            dist/release-report/**
+            dist/macos-arm64/**
+            dist/macos-x64/**
+            dist/windows-x64/**

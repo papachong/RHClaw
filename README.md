@@ -29,3 +29,23 @@ By default, the workspace assumes a local API service at `http://localhost:3000/
 - Desktop full-offline packaging can also consume a prebuilt Channel `.tgz` through `RHOPENCLAW_CHANNEL_PACKAGE_PATH`.
 - The current npm package spec remains `@rhopenclaw/rhclaw-channel` for compatibility with the existing Desktop installer, local validation logic, and full-offline packaging flow.
 - If the package scope is rebranded later, the Desktop frontend, Tauri runtime checks, Rust-side install receipts, and packaging scripts must be updated together in one coordinated change — modifying only the Channel metadata is not sufficient.
+
+## GitHub Actions Build And Release (Desktop)
+
+This repository includes a desktop CI workflow at `.github/workflows/desktop-package.yml`.
+
+- Manual trigger: run `RHClaw Desktop Package` from GitHub Actions (`workflow_dispatch`).
+- Tag trigger: push tags like `v1.0.0` or `desktop-v1.0.0` to start build + release flow.
+- Build targets: macOS arm64, macOS x64, Windows x64.
+- Build artifacts: uploaded as workflow artifacts (`rhclaw-desktop-*-bundle`).
+- Release report: uploaded as `rhclaw-desktop-release-report`.
+- GitHub Release publish:
+	- Automatic for tag pushes.
+	- Optional for manual runs via `publish_github_release=true`.
+
+Recommended repository secrets:
+
+- `RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY`
+- `RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY_PASSWORD`
+- `RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY` (optional, enables manifest signing)
+- `RHOPENCLAW_RELEASE_MANIFEST_PUBLIC_KEY` (optional, enables manifest signing)
