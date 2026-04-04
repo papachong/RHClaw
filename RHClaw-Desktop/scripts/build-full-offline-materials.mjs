@@ -14,6 +14,20 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
+
+/** Cross-device-safe rename: falls back to copy+delete on EXDEV. */
+function safeRenameSync(src, dest) {
+  try {
+    renameSync(src, dest);
+  } catch (err) {
+    if (err.code === 'EXDEV') {
+      copyFileSync(src, dest);
+      rmSync(src, { force: true });
+    } else {
+      throw err;
+    }
+  }
+}
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -319,7 +333,7 @@ async function downloadFile(url, outputPath, validator) {
   try {
     validator?.(tempPath);
     rmSync(outputPath, { force: true });
-    renameSync(tempPath, outputPath);
+    safeRenameSync(tempPath, outputPath);
   } catch (error) {
     rmSync(tempPath, { force: true });
     throw error;
@@ -705,7 +719,7 @@ async function buildOpenClawWithDeps(openclawVersion, destinationDir, npmRegistr
     if (!existsSync(repackedPath)) {
       throw new Error(`with-deps npm pack 未生成 tgz 文件: ${packedName}`);
     }
-    renameSync(repackedPath, outputPath);
+    safeRenameSync(repackedPath, outputPath);
 
     validateOpenClawPackage(outputPath, openclawVersion, `OpenClaw full-offline tgz (${archiveName})`);
 
