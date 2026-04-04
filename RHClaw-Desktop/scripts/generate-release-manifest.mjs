@@ -14,7 +14,22 @@ const args = Object.fromEntries(
 
 const packageJson = JSON.parse(readFileSync(resolve(cwd, 'package.json'), 'utf8'));
 const tauriConfig = JSON.parse(readFileSync(resolve(cwd, 'src-tauri/tauri.conf.json'), 'utf8'));
-const compatibilityMatrix = JSON.parse(readFileSync(resolve(cwd, 'release/compatibility-matrix.json'), 'utf8'));
+const compatibilityMatrixPath = resolve(cwd, 'release/compatibility-matrix.json');
+const defaultCompatibilityMatrix = {
+  channels: ['stable'],
+  platforms: [
+    { platform: 'darwin', architectures: [
+      { arch: 'aarch64', bundleTargets: ['dmg', 'app.tar.gz'], installMethod: 'dmg', minDesktopVersion: packageJson.version, rollbackSupported: true },
+      { arch: 'x86_64', bundleTargets: ['dmg', 'app.tar.gz'], installMethod: 'dmg', minDesktopVersion: packageJson.version, rollbackSupported: true },
+    ] },
+    { platform: 'windows', architectures: [
+      { arch: 'x86_64', bundleTargets: ['msi', 'nsis'], installMethod: 'nsis', minDesktopVersion: packageJson.version, rollbackSupported: true },
+    ] },
+  ],
+};
+const compatibilityMatrix = existsSync(compatibilityMatrixPath)
+  ? JSON.parse(readFileSync(compatibilityMatrixPath, 'utf8'))
+  : defaultCompatibilityMatrix;
 
 const artifactRoot = resolve(cwd, args['bundle-dir'] || args['artifact-root'] || 'src-tauri/target');
 const outputPath = resolve(cwd, args.output || 'release/release-manifest.json');
