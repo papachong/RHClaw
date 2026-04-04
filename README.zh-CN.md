@@ -2,13 +2,12 @@
 
 [English](README.md) | 中文
 
-RHClaw 是 RHClaw 桌面客户端及相关组件的公开开源工作区。
+RHClaw实现一键养虾，全自动本地离线包安装、自动配置官方OpenClaw，微信小程序打通。安全可靠，多虾协作，大脑共享，开始你的私有龙虾军团之旅吧！🦐🦐
+完整应用请查看[小爪龙虾官网](https://rhclaw.ruhooai.com)
 
 ## 当前模块
 
-当前已公开的模块：
-
-- `RHClaw-Desktop/`：基于 Tauri + React 构建的桌面应用，用于引导本地 OpenClaw 运行时、查看本地状态并管理桌面侧工作流。
+- `RHClaw-Desktop/`：OpenClaw多平台离线包打包、安装、配置和管理的客户端。基于 Tauri + React 构建的桌面应用。
 - `RHClaw-Channel/`：OpenClaw Gateway 渠道插件，将 RHClaw 控制面协议桥接到 OpenClaw 运行时。
 
 ## 快速开始
@@ -21,12 +20,6 @@ npm run desktop:dev
 ```
 
 默认配置假设本地 API 服务运行在 `http://localhost:3000/api/v1`。如果你的 API 地址不同，请在启动 Vite 前修改 `.env.local`。
-
-## 注意事项
-
-- 私有源码仓库在开源迁移期间保持只读状态。
-- 发布产物、签名密钥和内部部署基础设施已从本仓库中排除。
-- 部分打包脚本在本地开发环境之外构建或发布时，仍需设置相应的环境变量。
 
 ## Desktop 与 Channel 的联动关系
 
