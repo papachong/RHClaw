@@ -105,7 +105,7 @@ if (-not $forceRebuild -and (Test-FullOfflineMaterialsUpToDate -ManifestPath $fu
 	Write-Host '[INFO] FULL-OFFLINE 输入物料已是最新，跳过重建。（强制重建: RHOPENCLAW_FORCE_REBUILD_OFFLINE=1）'
 } else {
 	Write-Host '[INFO] 生成 Windows x64 FULL-OFFLINE 输入物料...'
-	& node "$PSScriptRoot/build-full-offline-materials.mjs" --platform=win --arch=x64 --full-platform-label=windows-x64 --openclaw-version=2026.4.1
+	& node "$PSScriptRoot/build-full-offline-materials.mjs" --platform=win --arch=x64 --full-platform-label=windows-x64
 	if ($LASTEXITCODE -ne 0) {
 		throw "[ERROR] full-offline 输入物料生成失败 (exit code: $LASTEXITCODE)"
 	}

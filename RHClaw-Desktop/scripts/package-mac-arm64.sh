@@ -86,7 +86,7 @@ if [[ "$FORCE_REBUILD" != '1' ]] && check_full_offline_up_to_date; then
   echo "[INFO] FULL-OFFLINE 输入物料已是最新，跳过重建。（强制重建: RHOPENCLAW_FORCE_REBUILD_OFFLINE=1）"
 else
   echo "[INFO] 生成 macOS arm64 FULL-OFFLINE 输入物料..."
-  node scripts/build-full-offline-materials.mjs --platform=darwin --arch=arm64 --full-platform-label=macos-arm64 --openclaw-version=2026.4.1
+  node scripts/build-full-offline-materials.mjs --platform=darwin --arch=arm64 --full-platform-label=macos-arm64
 fi
 
 bash scripts/package-mac.sh aarch64-apple-darwin arm64
