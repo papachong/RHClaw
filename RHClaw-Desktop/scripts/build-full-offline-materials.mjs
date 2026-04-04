@@ -45,17 +45,38 @@ const defaultPlatformLabel = fullPlatformLabelInput
 const outputRoot = resolve(projectRoot, args.output || `release/openclaw-bootstrap/full-offline-only/${defaultPlatformLabel}`);
 const buildEnv = {
   ...process.env,
-  https_proxy: process.env.https_proxy || 'http://127.0.0.1:7890',
-  http_proxy: process.env.http_proxy || 'http://127.0.0.1:7890',
-  all_proxy: process.env.all_proxy || 'socks5://127.0.0.1:7890',
   npm_config_loglevel: process.env.OPENCLAW_NPM_LOGLEVEL || process.env.npm_config_loglevel || 'error',
   NPM_CONFIG_LOGLEVEL: process.env.OPENCLAW_NPM_LOGLEVEL || process.env.NPM_CONFIG_LOGLEVEL || 'error',
 };
+const npmRegistryCandidates = uniqueUrls([
+  args['npm-registry'],
+  process.env.RHOPENCLAW_NPM_REGISTRY,
+  process.env.NPM_CONFIG_REGISTRY,
+  process.env.npm_config_registry,
+  'https://registry.npmjs.org',
+  'https://registry.npmmirror.com',
+]);
+const nodeMirrorCandidates = uniqueUrls([
+  args['node-mirror'],
+  process.env.RHOPENCLAW_NODE_MIRROR,
+  process.env.NODEJS_ORG_MIRROR,
+  process.env.NVM_NODEJS_ORG_MIRROR,
+  'https://nodejs.org/dist',
+  'https://npmmirror.com/mirrors/node',
+]);
 
 const REQUIRED_OPENCLAW_PACKAGE_ENTRIES = [
   'package/package.json',
   'package/docs/reference/templates/AGENTS.md',
 ];
+
+function normalizeUrl(url) {
+  return String(url || '').trim().replace(/\/+$/, '');
+}
+
+function uniqueUrls(items) {
+  return [...new Set(items.map(normalizeUrl).filter(Boolean))];
+}
 
 function buildIsolatedNpmEnv(extra = {}) {
   const nextEnv = { ...buildEnv };
@@ -112,6 +133,42 @@ function run(command, commandArgs, options = {}) {
     maxBuffer: 32 * 1024 * 1024,
     ...options,
   }).trim();
+}
+
+function formatError(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function runWithRegistryCandidates(commandBuilder, label) {
+  const failures = [];
+
+  for (const registry of npmRegistryCandidates) {
+    try {
+      return {
+        registry,
+        result: commandBuilder(registry),
+      };
+    } catch (error) {
+      failures.push(`${registry}: ${formatError(error)}`);
+    }
+  }
+
+  throw new Error(`${label} failed for all registries: ${failures.join(' | ')}`);
+}
+
+async function downloadFromUrlCandidates(urls, outputPath, validator, label) {
+  const failures = [];
+
+  for (const url of uniqueUrls(urls)) {
+    try {
+      await downloadFile(url, outputPath, validator);
+      return url;
+    } catch (error) {
+      failures.push(`${url}: ${formatError(error)}`);
+    }
+  }
+
+  throw new Error(`${label} failed for all sources: ${failures.join(' | ')}`);
 }
 
 function removeSiblingFiles(dir, predicate, keepName) {
@@ -265,14 +322,22 @@ async function downloadFile(url, outputPath, validator) {
 }
 
 function resolvePackageVersion() {
-  return run('npm', [
-    '--silent',
-    'view',
-    `openclaw@${openclawVersionInput}`,
-    'version',
-    '--registry',
-    'https://registry.npmmirror.com',
-  ]);
+  const { registry, result } = runWithRegistryCandidates(
+    (candidateRegistry) => run('npm', [
+      '--silent',
+      'view',
+      `openclaw@${openclawVersionInput}`,
+      'version',
+      '--registry',
+      candidateRegistry,
+    ]),
+    `resolve openclaw@${openclawVersionInput} version`,
+  );
+
+  return {
+    version: normalizeVersion(result),
+    registry,
+  };
 }
 
 function resolveNodePlatform() {
@@ -317,10 +382,7 @@ function isStableNodeVersion(version) {
 }
 
 async function fetchNodeIndexVersions() {
-  const sources = [
-    'https://npmmirror.com/mirrors/node/index.json',
-    'https://nodejs.org/dist/index.json',
-  ];
+  const sources = nodeMirrorCandidates.map((baseUrl) => `${baseUrl}/index.json`);
 
   for (const source of sources) {
     try {
@@ -531,7 +593,7 @@ function pruneRuntimePackageTree(rootDir) {
   console.log(`  [prune] removed ${removedFiles} files, saved ${(removedBytes / 1024 / 1024).toFixed(1)} MB (uncompressed); preserved root docs templates`);
 }
 
-async function buildOpenClawWithDeps(openclawVersion, destinationDir) {
+async function buildOpenClawWithDeps(openclawVersion, destinationDir, npmRegistry) {
   const tempRoot = mkdtempSync(join(os.tmpdir(), 'rhopenclaw-full-offline-'));
   const archiveName = `openclaw-${openclawVersion}-with-deps.tgz`;
   const outputPath = join(destinationDir, archiveName);
@@ -546,7 +608,7 @@ async function buildOpenClawWithDeps(openclawVersion, destinationDir) {
       '--pack-destination',
       tempRoot,
       '--registry',
-      'https://registry.npmmirror.com',
+      npmRegistry,
     ]);
 
     execFileSync('tar', ['-xzf', join(tempRoot, packedName), '-C', tempRoot], {
@@ -556,7 +618,7 @@ async function buildOpenClawWithDeps(openclawVersion, destinationDir) {
     });
 
     const packageDir = join(tempRoot, 'package');
-    execFileSync('npm', ['install', '--omit=dev', '--ignore-scripts', '--registry', 'https://registry.npmmirror.com'], {
+    execFileSync('npm', ['install', '--omit=dev', '--ignore-scripts', '--registry', npmRegistry], {
       cwd: packageDir,
       stdio: 'inherit',
       env: isolatedNpmEnv,
@@ -722,7 +784,7 @@ async function main() {
   const nodePlatform = resolveNodePlatform();
   const nodeArch = resolveNodeArch();
   const platformLabel = getFullPlatformLabel(nodePlatform, nodeArch);
-  const resolvedOpenclawVersion = resolvePackageVersion();
+  const { version: resolvedOpenclawVersion, registry: openclawRegistry } = resolvePackageVersion();
   const nodeVersion = await resolveNodeVersion();
 
   const installCnTarget = join(openclawDir, 'install-cn.sh');
@@ -731,14 +793,14 @@ async function main() {
   copyExecutable(installCnPath, installTarget);
 
   removeSiblingFiles(openclawPackagesDir, (entry) => entry.endsWith('.tgz'), '');
-  const openclawPackageName = await buildOpenClawWithDeps(resolvedOpenclawVersion, openclawPackagesDir);
+  const openclawPackageName = await buildOpenClawWithDeps(resolvedOpenclawVersion, openclawPackagesDir, openclawRegistry);
 
   const nodeArchiveExt = nodePlatform === 'win' ? 'zip' : 'tar.gz';
   const nodeArchiveName = `node-v${nodeVersion}-${nodePlatform}-${nodeArch}.${nodeArchiveExt}`;
   const nodeArchivePath = join(nodePackagesDir, nodeArchiveName);
   removeSiblingFiles(nodePackagesDir, (entry) => entry.endsWith('.tar.gz') || entry.endsWith('.zip'), nodeArchiveName);
-  await downloadFile(
-    `https://npmmirror.com/mirrors/node/v${nodeVersion}/${nodeArchiveName}`,
+  const nodeSourceUrl = await downloadFromUrlCandidates(
+    nodeMirrorCandidates.map((baseUrl) => `${baseUrl}/v${nodeVersion}/${nodeArchiveName}`),
     nodeArchivePath,
     (filePath) => validateNodeArchive(filePath, `Node full-offline 包 (${nodeArchiveName})`),
   );
@@ -769,6 +831,10 @@ async function main() {
       buildManifestFileEntry(`packages/node/${nodeArchiveName}`),
       buildManifestFileEntry(`packages/rhclaw-channel/${channelPackageName}`),
     ],
+    sources: {
+      openclawRegistry,
+      nodeArchive: nodeSourceUrl,
+    },
   };
 
   writeFileSync(join(manifestsDir, 'full-offline-materials.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');

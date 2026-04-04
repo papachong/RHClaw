@@ -46,9 +46,6 @@ const installCnMirrorUrl = `${mirrorBaseUrl}/mirrors/openclaw/install-cn.sh`;
 const installScriptMirrorUrl = `${mirrorBaseUrl}/mirrors/openclaw/install.sh`;
 const buildEnv = {
   ...process.env,
-  https_proxy: process.env.https_proxy || 'http://127.0.0.1:7890',
-  http_proxy: process.env.http_proxy || 'http://127.0.0.1:7890',
-  all_proxy: process.env.all_proxy || 'socks5://127.0.0.1:7890',
   npm_config_loglevel: process.env.OPENCLAW_NPM_LOGLEVEL || process.env.npm_config_loglevel || 'error',
   NPM_CONFIG_LOGLEVEL: process.env.OPENCLAW_NPM_LOGLEVEL || process.env.NPM_CONFIG_LOGLEVEL || 'error',
 };

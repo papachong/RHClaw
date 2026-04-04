@@ -135,9 +135,15 @@ print_installer_paths() {
 
 trap 'restore_non_target_full_offline_dirs' EXIT
 
-export https_proxy="${https_proxy:-http://127.0.0.1:7890}"
-export http_proxy="${http_proxy:-http://127.0.0.1:7890}"
-export all_proxy="${all_proxy:-socks5://127.0.0.1:7890}"
+if [[ -n "${https_proxy:-}" ]]; then
+  export https_proxy
+fi
+if [[ -n "${http_proxy:-}" ]]; then
+  export http_proxy
+fi
+if [[ -n "${all_proxy:-}" ]]; then
+  export all_proxy
+fi
 
 if [[ -n "${RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY_PATH:-}" && ! -f "$RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY_PATH" ]]; then
   echo "[ERROR] RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY_PATH 指向的文件不存在: ${RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY_PATH}" >&2

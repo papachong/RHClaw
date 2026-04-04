@@ -184,9 +184,6 @@ $releaseReport = "release/release-validation-report.json"
 $script:FullOfflineIsolationDir = $null
 $script:FullOfflineIsolationRoot = $null
 
-if (-not $env:https_proxy) { $env:https_proxy = 'http://127.0.0.1:7890' }
-if (-not $env:http_proxy) { $env:http_proxy = 'http://127.0.0.1:7890' }
-if (-not $env:all_proxy) { $env:all_proxy = 'socks5://127.0.0.1:7890' }
 if ($env:RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY_PATH -and -not (Test-Path $env:RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY_PATH)) {
   throw "[ERROR] RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY_PATH 指向的文件不存在: $($env:RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY_PATH)"
 }

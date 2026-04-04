@@ -15,6 +15,30 @@ if [[ -z "$CHANNEL_PACKAGE_JSON" && -n "${RHOPENCLAW_CHANNEL_ROOT:-}" ]]; then
 fi
 FORCE_REBUILD="${RHOPENCLAW_FORCE_REBUILD_OFFLINE:-0}"
 
+resolve_latest_openclaw_version() {
+  local registry
+  local -a registries=()
+  [[ -n "${RHOPENCLAW_NPM_REGISTRY:-}" ]] && registries+=("${RHOPENCLAW_NPM_REGISTRY%/}")
+  [[ -n "${NPM_CONFIG_REGISTRY:-}" ]] && registries+=("${NPM_CONFIG_REGISTRY%/}")
+  [[ -n "${npm_config_registry:-}" ]] && registries+=("${npm_config_registry%/}")
+  registries+=("https://registry.npmjs.org" "https://registry.npmmirror.com")
+
+  local seen="|"
+  for registry in "${registries[@]}"; do
+    [[ -n "$registry" ]] || continue
+    [[ "$seen" == *"|$registry|"* ]] && continue
+    seen+="$registry|"
+    local version=""
+    version="$(npm --silent view 'openclaw@latest' version --registry "$registry" 2>/dev/null)" || true
+    if [[ -n "$version" ]]; then
+      printf '%s' "$version"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 check_full_offline_up_to_date() {
   [[ -f "$FULL_OFFLINE_MANIFEST" ]] || return 1
 
@@ -46,10 +70,10 @@ check_full_offline_up_to_date() {
     echo "[INFO] 已通过 RHOPENCLAW_CHANNEL_PACKAGE_PATH 提供预打包 Channel，跳过 package.json 版本缓存校验"
   fi
 
-  # 比对 openclaw 最新版本（npmmirror，网络失败则信任缓存）
+  # 比对 openclaw 最新版本，网络失败则信任缓存
   local cached_openclaw latest_openclaw
   cached_openclaw="$(node -e "process.stdout.write(JSON.parse(require('node:fs').readFileSync('$FULL_OFFLINE_MANIFEST','utf8')).openclawVersion||'')" 2>/dev/null)"
-  latest_openclaw="$(npm --silent view 'openclaw@latest' version --registry https://registry.npmmirror.com 2>/dev/null)" || true
+  latest_openclaw="$(resolve_latest_openclaw_version 2>/dev/null)" || true
   if [[ -n "$latest_openclaw" && "$cached_openclaw" != "$latest_openclaw" ]]; then
     echo "[INFO] openclaw 版本变化: 缓存=${cached_openclaw} 最新=${latest_openclaw}"
     return 1

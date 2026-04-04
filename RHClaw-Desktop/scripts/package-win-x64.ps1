@@ -1,6 +1,40 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-OpenClawRegistryCandidates {
+	$candidates = @(
+		$env:RHOPENCLAW_NPM_REGISTRY,
+		$env:NPM_CONFIG_REGISTRY,
+		$env:npm_config_registry,
+		'https://registry.npmjs.org',
+		'https://registry.npmmirror.com'
+	) | Where-Object { $_ }
+
+	$seen = @{}
+	foreach ($candidate in $candidates) {
+		$normalized = $candidate.TrimEnd('/')
+		if (-not $seen.ContainsKey($normalized)) {
+			$seen[$normalized] = $true
+			$normalized
+		}
+	}
+}
+
+function Get-LatestOpenClawVersion {
+	foreach ($registry in Get-OpenClawRegistryCandidates) {
+		try {
+			$latestOpenClaw = (& npm --silent view "openclaw@latest" version --registry $registry 2>$null)
+			if ($LASTEXITCODE -eq 0 -and $latestOpenClaw) {
+				return $latestOpenClaw.Trim()
+			}
+		} catch {
+			continue
+		}
+	}
+
+	return ''
+}
+
 # ── FULL-OFFLINE 输入物料缓存检查 ────────────────────────────────────────
 # 缓存命中条件：manifest 存在 + 所有文件在磁盘上存在 + openclaw/Channel 版本与当前最新一致。
 # 设置 RHOPENCLAW_FORCE_REBUILD_OFFLINE=1 可强制跳过缓存直接重建。
@@ -47,13 +81,10 @@ function Test-FullOfflineMaterialsUpToDate {
 
 	# 比对 openclaw 最新版本（npmmirror，网络失败则信任缓存）
 	try {
-		$latestOpenClaw = (& npm --silent view "openclaw@latest" version --registry https://registry.npmmirror.com 2>$null)
-		if ($LASTEXITCODE -eq 0 -and $latestOpenClaw) {
-			$latestOpenClaw = $latestOpenClaw.Trim()
-			if ($manifest.openclawVersion -ne $latestOpenClaw) {
-				Write-Host "[INFO] openclaw 版本变化: 缓存=$($manifest.openclawVersion) 最新=$latestOpenClaw"
-				return $false
-			}
+		$latestOpenClaw = Get-LatestOpenClawVersion
+		if ($latestOpenClaw -and $manifest.openclawVersion -ne $latestOpenClaw) {
+			Write-Host "[INFO] openclaw 版本变化: 缓存=$($manifest.openclawVersion) 最新=$latestOpenClaw"
+			return $false
 		}
 	} catch {
 		# 网络异常，信任缓存继续

@@ -29,6 +29,9 @@ jobs:
     env:
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/RHClaw-Desktop/.npmrc.ci
+      https_proxy: ${{ vars.HTTPS_PROXY }}
+      http_proxy: ${{ vars.HTTP_PROXY }}
+      all_proxy: ${{ vars.ALL_PROXY }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY_PASSWORD }}
     strategy:
@@ -87,6 +90,9 @@ jobs:
     env:
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/RHClaw-Desktop/.npmrc.ci
+      https_proxy: ${{ vars.HTTPS_PROXY }}
+      http_proxy: ${{ vars.HTTP_PROXY }}
+      all_proxy: ${{ vars.ALL_PROXY }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.RHCLAW_DESKTOP_UPDATER_PRIVATE_KEY_PASSWORD }}
     defaults:
@@ -135,6 +141,9 @@ jobs:
     env:
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/RHClaw-Desktop/.npmrc.ci
+      https_proxy: ${{ vars.HTTPS_PROXY }}
+      http_proxy: ${{ vars.HTTP_PROXY }}
+      all_proxy: ${{ vars.ALL_PROXY }}
       RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY: ${{ secrets.RHOPENCLAW_RELEASE_MANIFEST_PRIVATE_KEY }}
       RHOPENCLAW_RELEASE_MANIFEST_PUBLIC_KEY: ${{ secrets.RHOPENCLAW_RELEASE_MANIFEST_PUBLIC_KEY }}
     needs:
