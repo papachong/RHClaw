@@ -1,0 +1,16 @@
+.DS_Store
+*.log
+
+RHClaw-Desktop/node_modules/
+RHClaw-Desktop/dist/
+RHClaw-Desktop/coverage/
+RHClaw-Desktop/release/
+RHClaw-Desktop/src-tauri/target/
+RHClaw-Desktop/.env
+RHClaw-Desktop/.env.*
+!RHClaw-Desktop/.env.example
+
+RHClaw-Channel/node_modules/
+RHClaw-Channel/*.tgz
+RHClaw-Channel/pack-report.txt
+RHClaw-Channel/size-report.txt
