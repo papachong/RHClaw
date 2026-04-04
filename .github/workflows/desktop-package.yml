@@ -29,6 +29,8 @@ jobs:
     env:
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/RHClaw-Desktop/.npmrc.ci
+      RHOPENCLAW_NPM_REGISTRY: https://registry.npmjs.org
+      RHOPENCLAW_NODE_MIRROR: https://nodejs.org/dist
       https_proxy: ${{ vars.HTTPS_PROXY }}
       http_proxy: ${{ vars.HTTP_PROXY }}
       all_proxy: ${{ vars.ALL_PROXY }}
@@ -90,6 +92,8 @@ jobs:
     env:
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/RHClaw-Desktop/.npmrc.ci
+      RHOPENCLAW_NPM_REGISTRY: https://registry.npmjs.org
+      RHOPENCLAW_NODE_MIRROR: https://nodejs.org/dist
       https_proxy: ${{ vars.HTTPS_PROXY }}
       http_proxy: ${{ vars.HTTP_PROXY }}
       all_proxy: ${{ vars.ALL_PROXY }}
@@ -141,6 +145,8 @@ jobs:
     env:
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/RHClaw-Desktop/.npmrc.ci
+      RHOPENCLAW_NPM_REGISTRY: https://registry.npmjs.org
+      RHOPENCLAW_NODE_MIRROR: https://nodejs.org/dist
       https_proxy: ${{ vars.HTTPS_PROXY }}
       http_proxy: ${{ vars.HTTP_PROXY }}
       all_proxy: ${{ vars.ALL_PROXY }}
