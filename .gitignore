@@ -14,7 +14,8 @@ RHClaw-Desktop/.env.*
 !RHClaw-Desktop/.env.example
 RHClaw-Desktop/.tauri-signing-key
 RHClaw-Desktop/.tauri-signing-key.pub
-
+.omc
+gh
 RHClaw-Channel/node_modules/
 RHClaw-Channel/*.tgz
 RHClaw-Channel/pack-report.txt
