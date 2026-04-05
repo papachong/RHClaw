@@ -264,10 +264,9 @@ jobs:
           prerelease: false
           files: |
             dist/release-report/**
-            dist/macos-arm64/*.dmg
-            dist/macos-arm64/*.app.tar.gz
-            dist/macos-x64/*.dmg
-            dist/macos-x64/*.app.tar.gz
-            dist/windows-x64/*.msi
-            dist/windows-x64/*.exe
-            dist/windows-x64/*.icns
+            dist/macos-arm64/**/*.dmg
+            dist/macos-arm64/**/*.app.tar.gz
+            dist/macos-x64/**/*.dmg
+            dist/macos-x64/**/*.app.tar.gz
+            dist/windows-x64/**/*.msi
+            dist/windows-x64/**/*.exe
