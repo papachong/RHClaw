@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   getAutostartStatus,
   getRHClawPluginStatus,
@@ -49,6 +49,7 @@ export interface UseDesktopRuntimeDeps {
   setRuntimeSetupPromptMode: (mode: RuntimeSetupPromptMode | null) => void;
   setRuntimeSetupPromptDismissed: (dismissed: boolean) => void;
   desktopTraceSessionId: string;
+  onSubscriptionSocketMessage?: (event: Record<string, unknown>) => void;
 }
 
 function toRHClawPluginSocketUrl(value: string) {
@@ -77,6 +78,7 @@ export function useDesktopRuntime(deps: UseDesktopRuntimeDeps) {
     setRuntimeSetupPromptMode,
     setRuntimeSetupPromptDismissed,
     desktopTraceSessionId,
+    onSubscriptionSocketMessage,
   } = deps;
 
   const [runtimeBusy, setRuntimeBusy] = useState<
@@ -91,6 +93,10 @@ export function useDesktopRuntime(deps: UseDesktopRuntimeDeps) {
   const [agentBusy, setAgentBusy] = useState<'start' | 'stop' | 'refresh' | null>(null);
   const [tauriAgent, setTauriAgent] = useState<TauriAgentStatusSnapshot>(defaultTauriAgentStatus);
   const [workspaceRuntimeLoading, setWorkspaceRuntimeLoading] = useState(false);
+  const subscriptionSocketRef = useRef<WebSocket | null>(null);
+  const subscriptionSocketReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const subscriptionSocketBackoffMsRef = useRef(2000);
+  const onSubscriptionSocketMessageRef = useRef(onSubscriptionSocketMessage);
 
   function nextTraceId(prefix: 'runtime' | 'execution') {
     return `${prefix}-${crypto.randomUUID()}`;
@@ -746,7 +752,7 @@ export function useDesktopRuntime(deps: UseDesktopRuntimeDeps) {
     }
 
     const installStatus = await installRHClawPlugin({
-      packageSpec: '@rhopenclaw/rhclaw-channel',
+      packageSpec: '@ruhooai/rhclaw-channel',
       serverUrl: serverConfigApiBaseUrl,
       deviceSocketUrl: toRHClawPluginSocketUrl(deriveDeviceSocketUrl(serverConfigApiBaseUrl)),
       deviceId: input.deviceId,
@@ -785,8 +791,110 @@ export function useDesktopRuntime(deps: UseDesktopRuntimeDeps) {
     setPluginBusy(null);
     setRHClawPlugin(defaultRHClawPluginStatus);
     setAgentBusy(null);
+    closeSubscriptionSocket();
     setTauriAgent(defaultTauriAgentStatus);
   }
+
+  useEffect(() => {
+    onSubscriptionSocketMessageRef.current = onSubscriptionSocketMessage;
+  }, [onSubscriptionSocketMessage]);
+
+  function deriveSubscriptionSocketUrl(apiBaseUrl: string): string {
+    const origin = apiBaseUrl.trim().replace(/\/api\/v\d+$/i, '').replace(/\/+$/, '');
+    if (!origin) {
+      return '';
+    }
+    const wsOrigin = /localhost|127\.0\.0\.1/i.test(origin)
+      ? origin.replace(/^http:\/\//i, 'ws://').replace(/^https:\/\//i, 'wss://')
+      : origin.replace(/^http:\/\//i, 'wss://').replace(/^https:\/\//i, 'wss://');
+    return `${wsOrigin}/ws/session`;
+  }
+
+  function closeSubscriptionSocket() {
+    if (subscriptionSocketReconnectTimerRef.current !== null) {
+      clearTimeout(subscriptionSocketReconnectTimerRef.current);
+      subscriptionSocketReconnectTimerRef.current = null;
+    }
+    if (subscriptionSocketRef.current) {
+      subscriptionSocketRef.current.onclose = null;
+      subscriptionSocketRef.current.onerror = null;
+      subscriptionSocketRef.current.onmessage = null;
+      subscriptionSocketRef.current.close();
+      subscriptionSocketRef.current = null;
+    }
+    subscriptionSocketBackoffMsRef.current = 2000;
+  }
+
+  function openSubscriptionSocket(wsUrl: string, deviceToken: string) {
+    if (subscriptionSocketRef.current) {
+      return;
+    }
+
+    try {
+      const url = `${wsUrl}?token=${encodeURIComponent(deviceToken)}`;
+      const socket = new WebSocket(url);
+      subscriptionSocketRef.current = socket;
+
+      socket.onopen = () => {
+        subscriptionSocketBackoffMsRef.current = 2000;
+      };
+
+      socket.onmessage = (event: MessageEvent<string>) => {
+        try {
+          const data = JSON.parse(event.data) as { type?: string; data?: unknown };
+          if (data?.type === 'device.subscription.update' && typeof data.data === 'object' && data.data !== null) {
+            onSubscriptionSocketMessageRef.current?.(data.data as Record<string, unknown>);
+          }
+        } catch {
+          // Ignore malformed messages from server.
+        }
+      };
+
+      socket.onclose = () => {
+        subscriptionSocketRef.current = null;
+        const delay = subscriptionSocketBackoffMsRef.current;
+        subscriptionSocketBackoffMsRef.current = Math.min(delay * 2, 30_000);
+        subscriptionSocketReconnectTimerRef.current = setTimeout(() => {
+          subscriptionSocketReconnectTimerRef.current = null;
+          openSubscriptionSocket(wsUrl, deviceToken);
+        }, delay);
+      };
+
+      socket.onerror = () => {
+        socket.close();
+      };
+    } catch {
+      const delay = subscriptionSocketBackoffMsRef.current;
+      subscriptionSocketBackoffMsRef.current = Math.min(delay * 2, 30_000);
+      subscriptionSocketReconnectTimerRef.current = setTimeout(() => {
+        subscriptionSocketReconnectTimerRef.current = null;
+        openSubscriptionSocket(wsUrl, deviceToken);
+      }, delay);
+    }
+  }
+
+  useEffect(() => {
+    if (startupWorkspaceMode !== 'bound') {
+      return;
+    }
+
+    const identity = getDeviceIdentity();
+    const deviceToken = identity.deviceToken;
+    if (!deviceToken) {
+      return;
+    }
+
+    const wsUrl = deriveSubscriptionSocketUrl(serverConfigApiBaseUrl);
+    if (!wsUrl) {
+      return;
+    }
+
+    openSubscriptionSocket(wsUrl, deviceToken);
+
+    return () => {
+      closeSubscriptionSocket();
+    };
+  }, [startupWorkspaceMode, serverConfigApiBaseUrl]);
 
   return {
     // state

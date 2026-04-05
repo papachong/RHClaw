@@ -22,7 +22,7 @@ import {
   getOrCreateDeviceCode,
   registerDevice,
 } from './services/device-api';
-import { fetchInstallLlmConfig } from './services/desktop-settings-api';
+import { fetchInstallLlmConfig, getDesktopLlmAssignment } from './services/desktop-settings-api';
 import {
   createPendingBindSessionView,
   deriveDesktopBindSessionView,
@@ -72,6 +72,7 @@ import {
 import {
   buildOpenClawModelKey,
   backupOpenClawConfig,
+  getBackupProgress,
   getTaskStatus,
   getRuntimePackageStatus,
   getOpenClawModelsList,
@@ -84,6 +85,7 @@ import {
   resolveRHClawChannelStatus,
   restartGateway,
   startTask,
+  type BackupProgressSnapshot,
   type OpenClawModelCatalogItem,
   type RuntimePackageStatusSnapshot,
   startManagedRuntimeProcess,
@@ -601,7 +603,12 @@ export function App() {
     action: null,
   });
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
-  const [openClawBackupBusy, setOpenClawBackupBusy] = useState(false);
+  const [backupModal, setBackupModal] = useState<{
+    open: boolean;
+    done: boolean;
+    error?: string;
+    result?: BackupProgressSnapshot;
+  }>({ open: false, done: false });
   const [lobsterQrModal, setLobsterQrModal] = useState<{
     open: boolean;
     loading: boolean;
@@ -921,6 +928,11 @@ export function App() {
     setRuntimeSetupPromptMode,
     setRuntimeSetupPromptDismissed,
     desktopTraceSessionId: desktopTraceSessionIdRef.current,
+    onSubscriptionSocketMessage: (event) => {
+      const notification = settings.mapSubscriptionNotification(event);
+      settings.pushSubscriptionNotification(notification);
+      void settings.handleSubscriptionModelConfigUpdate(event);
+    },
   });
 
   const {
@@ -1113,15 +1125,27 @@ export function App() {
 
     // TTL guard: if we already have a persisted signature and fetched config
     // within the last 24 hours, skip the network call entirely.
+    // Exception: if server reports pending reassignment, force refresh.
     const MODEL_CONFIG_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
     if (
       appliedInstallModelSignatureRef.current &&
       modelConfigFetchedAtRef.current &&
       Date.now() - new Date(modelConfigFetchedAtRef.current).getTime() < MODEL_CONFIG_TTL_MS
     ) {
-      console.info('[reinstall:applyInstallAssignedModel] SKIP — within TTL, signature present');
-      pushDesktopLog('runtime', 'install:model-assigned:skip:ttl', 'info');
-      return { needsRestart: false };
+      try {
+        const assignmentStatus = await getDesktopLlmAssignment(deviceToken);
+        if (assignmentStatus.hasPendingReassign && assignmentStatus.source !== 'custom') {
+          modelConfigFetchedAtRef.current = null;
+          console.info('[reinstall:applyInstallAssignedModel] TTL bypassed — pending pool reassignment detected');
+          pushDesktopLog('runtime', 'install:model-assigned:ttl-bypass:pending-reassign', 'info');
+        } else {
+          console.info('[reinstall:applyInstallAssignedModel] SKIP — within TTL, signature present, no reassign pending');
+          pushDesktopLog('runtime', 'install:model-assigned:skip:ttl', 'info');
+          return { needsRestart: false };
+        }
+      } catch {
+        console.info('[reinstall:applyInstallAssignedModel] TTL check: assignment query failed, proceeding with full refresh');
+      }
     }
 
     try {
@@ -2550,37 +2574,69 @@ export function App() {
   }
 
   function handleBackupOpenClawConfig() {
-    if (openClawBackupBusy) {
+    if (backupModal.open && !backupModal.done) {
       return;
     }
 
-    setOpenClawBackupBusy(true);
     setSettingsMenuOpen(false);
-    setMessage('已开始后台备份 OpenClaw 配置（除 logs 外），可继续使用工作台。');
+    setBackupModal({ open: true, done: false });
     pushDesktopLog('desktop', 'workspace:backup:started', 'info');
 
-    void backupOpenClawConfig()
-      .then((result) => {
-        setMessage(
-          [
-            '龙虾配置备份成功。',
-            `备份文件：${result.backupFileName}`,
-            `压缩后大小：${formatBytes(result.backupSizeBytes)}`,
-            `原始大小：${formatBytes(result.sourceSizeBytes)}`,
-            `保存路径：${result.backupFilePath}`,
-          ].join('\n'),
-        );
-        pushDesktopLog('desktop', `workspace:backup:ok:${result.backupFileName}`, 'info');
-      })
-      .catch((error) => {
-        const detail = describeError(error);
-        setMessage(`备份龙虾失败：${detail}`);
-        pushDesktopLog('desktop', `workspace:backup:error:${detail}`, 'danger');
-      })
-      .finally(() => {
-        setOpenClawBackupBusy(false);
-      });
+    void backupOpenClawConfig().catch((error) => {
+      const detail = describeError(error);
+      setBackupModal({ open: true, done: true, error: detail });
+      pushDesktopLog('desktop', `workspace:backup:error:${detail}`, 'danger');
+    });
   }
+
+  useEffect(() => {
+    if (!backupModal.open || backupModal.done) {
+      return;
+    }
+
+    let stopped = false;
+
+    const tick = async () => {
+      try {
+        const snap = await getBackupProgress();
+        if (stopped) {
+          return;
+        }
+
+        if (snap.completed) {
+          setBackupModal({ open: true, done: true, result: snap });
+          pushDesktopLog('desktop', `workspace:backup:ok:${snap.backupFileName}`, 'info');
+          setMessage(
+            [
+              '龙虾配置备份成功。',
+              `备份文件：${snap.backupFileName}`,
+              `压缩后大小：${formatBytes(snap.backupSizeBytes)}`,
+              `原始大小：${formatBytes(snap.sourceSizeBytes)}`,
+              `保存路径：${snap.backupFilePath}`,
+            ].join('\n'),
+          );
+        } else if (snap.error) {
+          setBackupModal({ open: true, done: true, error: snap.error });
+          setMessage(`备份龙虾失败：${snap.error}`);
+          pushDesktopLog('desktop', `workspace:backup:error:${snap.error}`, 'danger');
+        } else if (snap.active) {
+          setBackupModal((prev) => ({ ...prev, result: snap }));
+        }
+      } catch {
+        // Ignore transient poll errors.
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 800);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [backupModal.open, backupModal.done]);
 
   function handleRestoreOpenClawConfigMenu() {
     setSettingsMenuOpen(false);
@@ -4568,10 +4624,10 @@ OPENAI_BASE_URL=https://your-api-endpoint/v1`}</code></pre>
                             type="button"
                             className="workspace-settings-dropdown-item"
                             onClick={handleBackupOpenClawConfig}
-                            disabled={openClawBackupBusy}
+                            disabled={backupModal.open && !backupModal.done}
                           >
-                            {openClawBackupBusy ? <LoaderCircle size={16} strokeWidth={1.8} className="animate-spin" /> : <Save size={16} strokeWidth={1.8} />}
-                            {openClawBackupBusy ? '备份中...' : '备份龙虾'}
+                            {backupModal.open && !backupModal.done ? <LoaderCircle size={16} strokeWidth={1.8} className="animate-spin" /> : <Save size={16} strokeWidth={1.8} />}
+                            {backupModal.open && !backupModal.done ? '备份中...' : '备份龙虾'}
                           </button>
                           <button type="button" className="workspace-settings-dropdown-item" onClick={handleRestoreOpenClawConfigMenu}>
                             <ArchiveRestore size={16} strokeWidth={1.8} />
@@ -4587,6 +4643,69 @@ OPENAI_BASE_URL=https://your-api-endpoint/v1`}</code></pre>
 
             {shouldShowBackgroundInstallWorkspace ? renderBackgroundInstallWorkspace() : renderWorkspacePanel()}
           </section>
+
+          {backupModal.open ? (
+            <div
+              className="update-modal-overlay"
+              role="presentation"
+              onClick={backupModal.done ? () => setBackupModal({ open: false, done: false }) : undefined}
+            >
+              <div
+                className="update-modal-card backup-progress-modal-card"
+                role="dialog"
+                aria-modal="true"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="confirm-dialog-title">备份龙虾</h3>
+                {!backupModal.done ? (
+                  <>
+                    {backupModal.result && backupModal.result.totalFiles > 0 ? (
+                      <p className="backup-progress-tip">
+                        正在打包… {backupModal.result.processedFiles} / {backupModal.result.totalFiles} 个文件
+                        （{Math.round((backupModal.result.processedFiles / backupModal.result.totalFiles) * 100)}%）
+                      </p>
+                    ) : (
+                      <p className="backup-progress-tip">正在扫描文件，请稍候…</p>
+                    )}
+                    <div className="backup-progress-bar-track">
+                      {backupModal.result && backupModal.result.totalFiles > 0 ? (
+                        <progress
+                          className="backup-progress-native"
+                          value={backupModal.result.processedFiles}
+                          max={backupModal.result.totalFiles}
+                        />
+                      ) : (
+                        <div className="backup-progress-bar-fill backup-progress-indeterminate" />
+                      )}
+                    </div>
+                  </>
+                ) : backupModal.error ? (
+                  <p className="backup-progress-error">备份失败：{backupModal.error}</p>
+                ) : backupModal.result ? (
+                  <div className="backup-progress-result">
+                    <p className="backup-progress-ok">备份成功</p>
+                    <ul className="backup-progress-detail-list">
+                      <li>文件名：{backupModal.result.backupFileName}</li>
+                      <li>压缩后：{formatBytes(backupModal.result.backupSizeBytes)}</li>
+                      <li>原始大小：{formatBytes(backupModal.result.sourceSizeBytes)}</li>
+                      <li className="backup-progress-path">路径：{backupModal.result.backupFilePath}</li>
+                    </ul>
+                  </div>
+                ) : null}
+                {backupModal.done ? (
+                  <div className="confirm-dialog-actions">
+                    <button
+                      type="button"
+                      className="workspace-primary-action"
+                      onClick={() => setBackupModal({ open: false, done: false })}
+                    >
+                      关闭
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           {confirmDialog ? (
             <div className="update-modal-overlay" role="presentation" onClick={() => setConfirmDialog(null)}>

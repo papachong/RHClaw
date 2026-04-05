@@ -220,6 +220,19 @@ export interface OpenClawConfigBackupResult {
   detail: string;
 }
 
+export interface BackupProgressSnapshot {
+  active: boolean;
+  completed: boolean;
+  error?: string | null;
+  totalFiles: number;
+  processedFiles: number;
+  backupFilePath: string;
+  backupFileName: string;
+  backupSizeBytes: number;
+  sourceSizeBytes: number;
+  detail: string;
+}
+
 export interface OpenClawConfigRestoreResult {
   ok: boolean;
   restoredFrom: string;
@@ -332,7 +345,7 @@ function createRHClawPluginBrowserFallback(detail: string): RHClawPluginStatusSn
     installed: false,
     configured: false,
     detail,
-    packageSpec: '@rhopenclaw/rhclaw-channel',
+    packageSpec: '@ruhooai/rhclaw-channel',
     packageValidated: false,
     gatewayRestartRequired: false,
     gatewayProbePassed: false,
@@ -756,13 +769,33 @@ export async function cancelTask(taskId: string): Promise<TaskEntry> {
   return invoke<TaskEntry>('task_cancel', { taskId });
 }
 
-export async function backupOpenClawConfig(): Promise<OpenClawConfigBackupResult> {
+export async function backupOpenClawConfig(): Promise<void> {
   const invoke = getInvoke();
   if (!invoke) {
     throw new Error('当前为浏览器联调壳层，无法备份 OpenClaw 配置。');
   }
 
-  return invoke<OpenClawConfigBackupResult>('backup_openclaw_config');
+  return invoke<void>('backup_openclaw_config');
+}
+
+export async function getBackupProgress(): Promise<BackupProgressSnapshot> {
+  const invoke = getInvoke();
+  if (!invoke) {
+    return {
+      active: false,
+      completed: false,
+      error: null,
+      totalFiles: 0,
+      processedFiles: 0,
+      backupFilePath: '',
+      backupFileName: '',
+      backupSizeBytes: 0,
+      sourceSizeBytes: 0,
+      detail: '',
+    };
+  }
+
+  return invoke<BackupProgressSnapshot>('get_backup_progress');
 }
 
 export async function pickOpenClawBackupFile(): Promise<string | null> {

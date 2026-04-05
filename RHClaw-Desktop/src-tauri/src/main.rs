@@ -306,6 +306,34 @@ struct DesktopUpdaterProgressInner {
     error: Option<String>,
 }
 
+#[derive(Clone)]
+struct BackupProgressHandle {
+    inner: std::sync::Arc<std::sync::Mutex<BackupProgressInner>>,
+}
+
+impl Default for BackupProgressHandle {
+    fn default() -> Self {
+        Self {
+            inner: std::sync::Arc::new(std::sync::Mutex::new(BackupProgressInner::default())),
+        }
+    }
+}
+
+#[derive(Default, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupProgressInner {
+    active: bool,
+    completed: bool,
+    error: Option<String>,
+    total_files: u64,
+    processed_files: u64,
+    backup_file_path: String,
+    backup_file_name: String,
+    backup_size_bytes: u64,
+    source_size_bytes: u64,
+    detail: String,
+}
+
 #[derive(Clone, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RuntimePackageManifest {
@@ -2289,12 +2317,45 @@ fn is_excluded_from_openclaw_backup(relative: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn count_openclaw_files_recursive(root: &Path, current: &Path) -> u64 {
+    let entries = match fs::read_dir(current) {
+        Ok(entries) => entries,
+        Err(_) => return 0,
+    };
+
+    let mut count = 0u64;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        let relative = match path.strip_prefix(root) {
+            Ok(relative) => relative,
+            Err(_) => continue,
+        };
+        if is_excluded_from_openclaw_backup(relative) {
+            continue;
+        }
+        if metadata.is_dir() {
+            count += count_openclaw_files_recursive(root, &path);
+        } else if metadata.is_file() {
+            count += 1;
+        }
+    }
+    count
+}
+
 fn zip_openclaw_dir_recursive(
     root: &Path,
     current: &Path,
     backup_file_path: &Path,
     zip: &mut zip::ZipWriter<fs::File>,
     source_size_bytes: &mut u64,
+    progress: &std::sync::Arc<std::sync::Mutex<BackupProgressInner>>,
 ) -> Result<usize, String> {
     let mut archived_count = 0usize;
 
@@ -2335,8 +2396,14 @@ fn zip_openclaw_dir_recursive(
             zip.add_directory(format!("{relative_str}/"), dir_options)
                 .map_err(|error| format!("写入目录到 ZIP 失败: {relative_str} ({error})"))?;
 
-            archived_count +=
-                zip_openclaw_dir_recursive(root, &path, backup_file_path, zip, source_size_bytes)?;
+            archived_count += zip_openclaw_dir_recursive(
+                root,
+                &path,
+                backup_file_path,
+                zip,
+                source_size_bytes,
+                progress,
+            )?;
             continue;
         }
 
@@ -2357,6 +2424,10 @@ fn zip_openclaw_dir_recursive(
 
         *source_size_bytes = source_size_bytes.saturating_add(metadata.len());
         archived_count += 1;
+
+        if let Ok(mut state) = progress.lock() {
+            state.processed_files += 1;
+        }
     }
 
     Ok(archived_count)
@@ -2432,53 +2503,151 @@ fn pick_openclaw_backup_file() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-fn backup_openclaw_config() -> Result<OpenClawConfigBackupResult, String> {
+async fn backup_openclaw_config(progress: State<'_, BackupProgressHandle>) -> Result<(), String> {
     let config_root = resolve_openclaw_config_dir()?;
     if !config_root.exists() {
         return Err("未检测到 ~/.openclaw，请先完成 OpenClaw 安装".into());
     }
 
-    let backup_dir = config_root.join("backups");
-    fs::create_dir_all(&backup_dir).map_err(|error| format!("创建备份目录失败: {error}"))?;
-
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let backup_file_name = format!("rhclaw-config-backup-{timestamp}.zip");
-    let backup_file_path = backup_dir.join(&backup_file_name);
-
-    let file = fs::File::create(&backup_file_path)
-        .map_err(|error| format!("创建备份文件失败: {} ({error})", backup_file_path.display()))?;
-    let mut zip = zip::ZipWriter::new(file);
-    let mut source_size_bytes = 0u64;
-
-    let archived_count = zip_openclaw_dir_recursive(
-        &config_root,
-        &config_root,
-        &backup_file_path,
-        &mut zip,
-        &mut source_size_bytes,
-    )?;
-
-    zip.finish()
-        .map_err(|error| format!("完成备份压缩失败: {error}"))?;
-
-    if archived_count == 0 {
-        return Err("未发现可备份内容（已排除 logs）".into());
+    {
+        let state = progress
+            .inner
+            .lock()
+            .map_err(|_| "backup state poisoned".to_string())?;
+        if state.active {
+            return Ok(());
+        }
     }
 
-    let backup_size_bytes = fs::metadata(&backup_file_path)
-        .map_err(|error| format!("读取备份文件信息失败: {error}"))?
-        .len();
+    {
+        let mut state = progress
+            .inner
+            .lock()
+            .map_err(|_| "backup state poisoned".to_string())?;
+        *state = BackupProgressInner {
+            active: true,
+            completed: false,
+            error: None,
+            ..Default::default()
+        };
+    }
 
-    Ok(OpenClawConfigBackupResult {
-        ok: true,
-        backup_file_path: backup_file_path.to_string_lossy().to_string(),
-        backup_file_name,
-        backup_size_bytes,
-        source_size_bytes,
-        detail: format!(
-            "备份完成，已归档 {archived_count} 个文件（已排除 logs 目录）"
-        ),
-    })
+    let progress_arc = progress.inner.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let progress_for_blocking = progress_arc.clone();
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let total_files = count_openclaw_files_recursive(&config_root, &config_root);
+            if let Ok(mut state) = progress_for_blocking.lock() {
+                state.total_files = total_files;
+            }
+
+            let backup_dir = config_root.join("backups");
+            if let Err(error) = fs::create_dir_all(&backup_dir) {
+                if let Ok(mut state) = progress_for_blocking.lock() {
+                    state.active = false;
+                    state.error = Some(format!("创建备份目录失败: {error}"));
+                }
+                return;
+            }
+
+            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+            let backup_file_name = format!("rhclaw-config-backup-{timestamp}.zip");
+            let backup_file_path = backup_dir.join(&backup_file_name);
+
+            let file = match fs::File::create(&backup_file_path) {
+                Ok(file) => file,
+                Err(error) => {
+                    if let Ok(mut state) = progress_for_blocking.lock() {
+                        state.active = false;
+                        state.error = Some(format!(
+                            "创建备份文件失败: {} ({error})",
+                            backup_file_path.display()
+                        ));
+                    }
+                    return;
+                }
+            };
+            let mut zip = zip::ZipWriter::new(file);
+            let mut source_size_bytes = 0u64;
+
+            let archived_count = match zip_openclaw_dir_recursive(
+                &config_root,
+                &config_root,
+                &backup_file_path,
+                &mut zip,
+                &mut source_size_bytes,
+                &progress_for_blocking,
+            ) {
+                Ok(count) => count,
+                Err(error) => {
+                    if let Ok(mut state) = progress_for_blocking.lock() {
+                        state.active = false;
+                        state.error = Some(error);
+                    }
+                    return;
+                }
+            };
+
+            if let Err(error) = zip.finish() {
+                if let Ok(mut state) = progress_for_blocking.lock() {
+                    state.active = false;
+                    state.error = Some(format!("完成备份压缩失败: {error}"));
+                }
+                return;
+            }
+
+            if archived_count == 0 {
+                if let Ok(mut state) = progress_for_blocking.lock() {
+                    state.active = false;
+                    state.error = Some("未发现可备份内容（已排除 logs）".to_string());
+                }
+                return;
+            }
+
+            let backup_size_bytes = match fs::metadata(&backup_file_path) {
+                Ok(metadata) => metadata.len(),
+                Err(error) => {
+                    if let Ok(mut state) = progress_for_blocking.lock() {
+                        state.active = false;
+                        state.error = Some(format!("读取备份文件信息失败: {error}"));
+                    }
+                    return;
+                }
+            };
+
+            if let Ok(mut state) = progress_for_blocking.lock() {
+                state.active = false;
+                state.completed = true;
+                state.backup_file_path = backup_file_path.to_string_lossy().to_string();
+                state.backup_file_name = backup_file_name;
+                state.backup_size_bytes = backup_size_bytes;
+                state.source_size_bytes = source_size_bytes;
+                state.detail = format!("备份完成，已归档 {archived_count} 个文件（已排除 logs 目录）");
+            }
+        })
+        .await;
+
+        if let Err(join_error) = result {
+            if let Ok(mut state) = progress_arc.lock() {
+                if !state.completed && state.error.is_none() {
+                    state.active = false;
+                    state.error = Some(format!("备份任务异常退出: {join_error}"));
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn get_backup_progress(state: State<'_, BackupProgressHandle>) -> Result<BackupProgressInner, String> {
+    let inner = state
+        .inner
+        .lock()
+        .map_err(|_| "backup state poisoned".to_string())?;
+    Ok(inner.clone())
 }
 
 #[tauri::command]
@@ -4889,7 +5058,7 @@ fn validate_and_stage_local_rhclaw_package(
     )
     .map_err(|error| format!("failed to parse RHClaw plugin manifest: {error}"))?;
 
-    if package_json.name.trim() != "@rhopenclaw/rhclaw-channel" {
+    if package_json.name.trim() != "@ruhooai/rhclaw-channel" {
         return Err(format!("unexpected RHClaw package name: {}", package_json.name));
     }
 
@@ -4955,7 +5124,7 @@ fn verify_staged_local_rhclaw_package(paths: &RHClawPluginPaths) -> Result<RHCla
     )
     .map_err(|error| format!("failed to parse RHClaw install receipt: {error}"))?;
 
-    if receipt.package_name.trim() != "@rhopenclaw/rhclaw-channel"
+    if receipt.package_name.trim() != "@ruhooai/rhclaw-channel"
         || receipt.plugin_id.trim() != "rhclaw-channel"
         || !receipt.channels.iter().any(|item| item == "rhclaw")
     {
@@ -9125,7 +9294,7 @@ fn install_rhclaw_plugin(
         .unwrap_or(false);
     let resolved_package_spec = package_spec
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "@rhopenclaw/rhclaw-channel".into());
+        .unwrap_or_else(|| "@ruhooai/rhclaw-channel".into());
     let install_mode = if detected_local_path.is_some() {
         if detected_local_is_tgz {
             "local-tgz"
@@ -10135,6 +10304,7 @@ fn main() {
         .manage(AgentState::default())
         .manage(ManagedRuntimeStateHandle::default())
         .manage(DesktopUpdaterProgressHandle::default())
+        .manage(BackupProgressHandle::default())
         .manage(task_center::TaskCenterState::default())
         .invoke_handler(tauri::generate_handler![
             agent_status,
@@ -10164,6 +10334,7 @@ fn main() {
             save_openclaw_config_file,
             pick_openclaw_backup_file,
             backup_openclaw_config,
+            get_backup_progress,
             restore_openclaw_config,
             get_openclaw_memory_overview,
             models_capability_probe,

@@ -613,13 +613,14 @@ fn execute_install_runtime(
         {
             let probe = crate::probe_gateway_running();
             if !probe.running {
-                // 再等一轮重试
-                std::thread::sleep(std::time::Duration::from_secs(3));
-                let probe2 = crate::probe_gateway_running();
-                if !probe2.running {
+                let retry_probe = crate::poll_gateway_until_healthy(
+                    std::time::Duration::from_secs(15),
+                    std::time::Duration::from_millis(500),
+                );
+                if !retry_probe.running {
                     return Err(format!(
                         "安装完成但 Gateway 启动失败: {}。请稍后手动执行 openclaw gateway start。",
-                        probe2.detail
+                        retry_probe.detail
                     ));
                 }
             }

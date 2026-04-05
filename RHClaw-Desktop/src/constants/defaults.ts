@@ -37,7 +37,7 @@ export const defaultRHClawPluginStatus: RHClawPluginStatusSnapshot = {
   installed: false,
   configured: false,
   detail: '等待初始化 RHClaw Channel 插件托管状态。',
-  packageSpec: '@rhopenclaw/rhclaw-channel',
+  packageSpec: '@ruhooai/rhclaw-channel',
   packageValidated: false,
   gatewayRestartRequired: false,
   gatewayProbePassed: false,

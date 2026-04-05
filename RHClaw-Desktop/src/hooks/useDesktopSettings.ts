@@ -625,6 +625,57 @@ export function useDesktopSettings(deps: UseDesktopSettingsDeps) {
     applyDefaultGlmProvider(payload.providers.items, force);
   }
 
+  /** 内置模型套餐白名单（应和 Server 侧保持一致） */
+  const BUILTIN_MODEL_PLAN_CODES = ['glm_monthly', 'glm_quarterly', 'glm_yearly'];
+
+  /**
+   * 收到订阅变更 WebSocket 事件时，进行模型配置自动更新。
+   * 仅内置模型套餐且非自定义 provider 用户才执行更新。
+   */
+  async function handleSubscriptionModelConfigUpdate(event: Record<string, unknown>): Promise<void> {
+    const modelConfigChanged = event.modelConfigChanged === true;
+    const planCode = typeof event.planCode === 'string' ? event.planCode : null;
+
+    if (!modelConfigChanged || !planCode || !BUILTIN_MODEL_PLAN_CODES.includes(planCode)) {
+      return;
+    }
+
+    if (desktopLlm.assignment?.source === 'custom') {
+      return;
+    }
+
+    const token = resolveDeviceToken();
+    if (!token) {
+      return;
+    }
+
+    try {
+      const result = await reassignDesktopLlm(token);
+      await syncGatewayConfig(result.assignment, '订阅已激活，模型配置已自动更新');
+      await refreshDesktopLlmPanel();
+      pushSubscriptionNotification({
+        id: `subscription_model_synced_${Date.now()}`,
+        reason: 'subscription_payment_succeeded',
+        title: '订阅已激活',
+        detail: '模型配置已自动切换为订阅池。',
+        tone: 'success',
+        publishedAt: new Date().toISOString(),
+        currentPlanCode: planCode,
+      });
+    } catch (error) {
+      pushSubscriptionNotification({
+        id: `subscription_model_sync_failed_${Date.now()}`,
+        reason: 'subscription_payment_succeeded',
+        title: '订阅已激活',
+        detail: '请重启桌面客户端以更新模型配置。',
+        tone: 'warning',
+        publishedAt: new Date().toISOString(),
+        currentPlanCode: planCode,
+      });
+      pushDesktopLog?.('runtime', `subscription:model-config-sync-failed:${error instanceof Error ? error.message : 'unknown'}`, 'warning');
+    }
+  }
+
   function pushSubscriptionNotification(record: SubscriptionNotificationRecord) {
     setSubscriptionNotifications((current) => [record, ...current].slice(0, 12));
   }
@@ -721,6 +772,7 @@ export function useDesktopSettings(deps: UseDesktopSettingsDeps) {
     initializeDefaultGlmProviderForToken,
     pushSubscriptionNotification,
     mapSubscriptionNotification,
+    handleSubscriptionModelConfigUpdate,
     resetSettingsPanels,
   };
 }
