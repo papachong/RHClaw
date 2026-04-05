@@ -6,7 +6,7 @@ import { setRHClawRuntime } from "./src/runtime.js";
 const plugin = {
   id: "rhclaw-channel",
   name: "RHClaw Channel",
-  description: "RHClaw custom channel plugin",
+  description: "RHOpenClaw custom channel plugin",
   configSchema: rhclawPluginConfigSchema,
   register(api: OpenClawPluginApi) {
     setRHClawRuntime(api.runtime);

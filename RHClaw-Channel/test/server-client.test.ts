@@ -259,7 +259,7 @@ test("server client publishResult falls back to legacy commands result endpoint 
 
   try {
     const client = createRHClawServerClient({
-      serverUrl: "https://api.example.com/api/v1",
+      serverUrl: "https://request.ruhooai.com/api/v1",
       deviceId: "device-1",
     });
 

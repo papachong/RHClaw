@@ -408,7 +408,7 @@ export const rhclawPlugin: ChannelPlugin<ResolvedRHClawAccount> = {
     selectionLabel: "RHClaw Channel",
     docsPath: "/channels/rhclaw",
     docsLabel: "rhclaw",
-    blurb: "RHClaw custom channel bridge.",
+    blurb: "RHOpenClaw custom channel bridge.",
     order: 95,
   },
   capabilities: {
@@ -443,7 +443,7 @@ export const rhclawPlugin: ChannelPlugin<ResolvedRHClawAccount> = {
       allowFrom: account.config.allowFrom ?? ["server"],
       policyPath: "channels.rhclaw.dmPolicy",
       allowFromPath: "channels.rhclaw.allowFrom",
-      approveHint: "通过 RHClaw 服务端或 Desktop 管理端配置 allowFrom。",
+      approveHint: "通过 RHOpenClaw-Server 或 Desktop 管理端配置 allowFrom。",
       normalizeEntry: (raw) => raw.trim(),
     }),
   },

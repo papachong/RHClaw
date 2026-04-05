@@ -1,16 +1,16 @@
 {
-  "name": "@rhopenclaw/rhclaw-channel",
-  "version": "1.0.3",
+  "name": "@ruhooai/rhclaw-channel",
+  "version": "1.0.4",
   "description": "RHClaw Channel plugin for OpenClaw Gateway",
   "type": "module",
   "private": false,
   "keywords": [
     "openclaw",
-    "rhclaw",
+    "rhopenclaw",
     "channel-plugin",
     "gateway"
   ],
-  "license": "MIT",
+  "license": "UNLICENSED",
   "files": [
     "index.ts",
     "openclaw.plugin.json",
@@ -27,12 +27,12 @@
       "selectionLabel": "RHClaw Channel",
       "docsPath": "/channels/rhclaw",
       "docsLabel": "rhclaw",
-      "blurb": "RHClaw custom channel bridge for OpenClaw Gateway.",
+      "blurb": "RHOpenClaw custom channel bridge for OpenClaw Gateway.",
       "order": 95,
       "quickstartAllowFrom": true
     },
     "install": {
-      "npmSpec": "@rhopenclaw/rhclaw-channel",
+      "npmSpec": "@ruhooai/rhclaw-channel",
       "localPath": "RHClaw-Channel",
       "defaultChoice": "npm"
     }

@@ -624,12 +624,16 @@ export function createRHClawServerClient(config: RHClawChannelConfig): RHClawSer
         });
       };
 
-      const currentToken = await loadToken();
+      // Ensure initial token is loaded before connecting
+      await loadToken();
 
       const resolvedSocketUrl = socketUrl.replace(/^ws(s?):\/\//, (_, s) => `http${s}://`);
 
       socket = socketIoConnect(resolvedSocketUrl, {
-        auth: { token: currentToken },
+        // Dynamic auth: always sends the latest token on every (re)connect attempt
+        auth: (callback) => {
+          callback({ token: tokenState.value });
+        },
         transports: ["polling", "websocket"],
         reconnection: true,
         reconnectionDelay: 1_000,
@@ -688,26 +692,46 @@ export function createRHClawServerClient(config: RHClawChannelConfig): RHClawSer
         // Subscription status update — handle in future iteration.
       });
 
+      // Helper: pause auto-reconnect, run reregister, then manually reconnect.
+      // This prevents socket.io from racing its own reconnect with stale auth
+      // while the async reregister is in-flight.
+      const handleInvalidatedSession = (reason: string) => {
+        if (!onSessionInvalidated) {
+          onError?.(new Error(`Device session invalidated: ${reason}`));
+          return;
+        }
+
+        // Disable auto-reconnect so socket.io doesn't retry with the old token
+        if (socket) {
+          socket.io.opts.reconnection = false;
+        }
+
+        void onSessionInvalidated(reason)
+          .then((recovered) => {
+            if (recovered && socket) {
+              // Re-enable auto-reconnect and connect (auth callback reads latest token)
+              socket.io.opts.reconnection = true;
+              socket.connect();
+            } else {
+              onError?.(new Error(`Device session invalidated: ${reason}`));
+              onClose?.();
+            }
+          })
+          .catch((err) => {
+            // Re-enable so future manual retries still work
+            if (socket) {
+              socket.io.opts.reconnection = true;
+            }
+            onError?.(err instanceof Error ? err : new Error(`Device session invalidated: ${reason}`));
+            onClose?.();
+          });
+      };
+
       socket.on("device.session.invalidated", (data: unknown) => {
         const reason = data && typeof data === "object" && "reason" in data
           ? String((data as Record<string, unknown>).reason)
           : "unknown";
-
-        if (onSessionInvalidated) {
-          void onSessionInvalidated(reason).then((recovered) => {
-            if (recovered && socket) {
-              // Force reconnect with the new token
-              socket.auth = { token: tokenState.value };
-              socket.disconnect().connect();
-            } else {
-              onError?.(new Error(`Device session invalidated: ${reason}`));
-            }
-          }).catch((err) => {
-            onError?.(err instanceof Error ? err : new Error(`Device session invalidated: ${reason}`));
-          });
-        } else {
-          onError?.(new Error(`Device session invalidated: ${reason}`));
-        }
+        handleInvalidatedSession(reason);
       });
 
       socket.on("disconnect", (reason: string) => {
@@ -717,18 +741,7 @@ export function createRHClawServerClient(config: RHClawChannelConfig): RHClawSer
         // "io server disconnect" means the server kicked us (token revoked / auth fail).
         // Attempt automatic re-register before falling back to onClose.
         if (reason === "io server disconnect" && onSessionInvalidated) {
-          void onSessionInvalidated(`server-disconnect:${reason}`)
-            .then((recovered) => {
-              if (recovered && socket) {
-                socket.auth = { token: tokenState.value };
-                socket.connect();
-              } else {
-                onClose?.();
-              }
-            })
-            .catch(() => {
-              onClose?.();
-            });
+          handleInvalidatedSession(`server-disconnect:${reason}`);
           return;
         }
 
@@ -737,6 +750,12 @@ export function createRHClawServerClient(config: RHClawChannelConfig): RHClawSer
 
       socket.on("connect_error", (error: Error) => {
         onError?.(new Error(`RHClaw Socket.IO connect error: ${error.message}`));
+
+        // If the error looks like a token rejection, attempt re-register
+        // instead of letting socket.io retry endlessly with the same bad token.
+        if (/revoked|unauthorized|token.*invalid|401/i.test(error.message) && onSessionInvalidated) {
+          handleInvalidatedSession(`connect-error:${error.message}`);
+        }
       });
 
       return {

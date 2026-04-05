@@ -66,8 +66,8 @@ test("rhclaw startAccount stays pending until abort", async () => {
         enabled: true,
         name: "RHClaw Device",
         config: {
-          serverUrl: "https://api.example.com/api/v1",
-          deviceSocketUrl: "wss://api.example.com/device",
+          serverUrl: "https://request.ruhooai.com/api/v1",
+          deviceSocketUrl: "https://request.ruhooai.com/device",
           deviceId: "device-1",
           connectionMode: "polling",
           defaultAgentId: "main",
@@ -198,8 +198,8 @@ test("rhclaw forwards inbound polling events through the available reply handler
         enabled: true,
         name: "RHClaw Device",
         config: {
-          serverUrl: "https://api.example.com/api/v1",
-          deviceSocketUrl: "wss://api.example.com/device",
+          serverUrl: "https://request.ruhooai.com/api/v1",
+          deviceSocketUrl: "https://request.ruhooai.com/device",
           deviceId: "device-1",
           connectionMode: "polling",
           heartbeatIntervalSec: 1,
@@ -330,8 +330,8 @@ test("rhclaw falls back to runtime channel dispatch when direct inbound handler 
         enabled: true,
         name: "RHClaw Device",
         config: {
-          serverUrl: "https://api.example.com/api/v1",
-          deviceSocketUrl: "wss://api.example.com/device",
+          serverUrl: "https://request.ruhooai.com/api/v1",
+          deviceSocketUrl: "https://request.ruhooai.com/device",
           deviceId: "device-1",
           connectionMode: "polling",
           heartbeatIntervalSec: 1,

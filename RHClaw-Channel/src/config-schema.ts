@@ -108,9 +108,9 @@ export const rhclawPluginConfigSchema: OpenClawPluginConfigSchema = {
   jsonSchema: rhclawConfigJsonSchema,
   uiHints: {
     serverUrl: {
-      label: "RHClaw API 地址",
+      label: "RHOpenClaw API 地址",
       help: "用于拉取配置、上报状态和查询运行上下文。",
-      placeholder: "https://api.example.com/api/v1",
+      placeholder: "https://api.rhopenclaw.example.com/api/v1",
     },
     connectionMode: {
       label: "连接模式",
@@ -119,7 +119,7 @@ export const rhclawPluginConfigSchema: OpenClawPluginConfigSchema = {
     deviceSocketUrl: {
       label: "RH 设备 Socket 地址",
       help: "用于接收命令、回传 ACK、结果和心跳。",
-      placeholder: "wss://api.example.com/device",
+      placeholder: "wss://api.rhopenclaw.example.com/device",
     },
     deviceId: {
       label: "设备 ID",

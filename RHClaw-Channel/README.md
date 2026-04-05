@@ -1,6 +1,6 @@
 # RHClaw Channel
 
-运行在 OpenClaw Gateway 中的标准 Channel 插件，用于把 RHClaw 控制面协议桥接到 OpenClaw 运行时。
+运行在 OpenClaw Gateway 中的标准 Channel 插件，用于把 RHOpenClaw 的控制面协议桥接到 OpenClaw 运行时。
 
 ## 开发者指南
 
@@ -21,13 +21,11 @@ npm run test
 
 ### 安装方式
 
-已发布到 npm 时，可直接通过 npm 安装：
+正式环境推荐直接通过 npm 安装：
 
 ```bash
-openclaw plugins install @rhopenclaw/rhclaw-channel
+openclaw plugins install @ruhooai/rhclaw-channel
 ```
-
-当前仍保留 `@rhopenclaw/rhclaw-channel` 这一包名，用于兼容已公开的 Desktop 安装、自愈校验和 full-offline 打包链路。后续若切换到新的公开 scope，需要与 Desktop 侧联动同步调整，而不是只改 Channel 单仓元数据。
 
 开发或回归场景可使用本地目录安装：
 
@@ -46,8 +44,6 @@ openclaw plugins install /path/to/RHClaw-Channel
 - `defaultAgentId`
 - `heartbeatIntervalSec`
 
-示例地址仅作为占位值使用。公开仓不提供任何默认生产端点，请在接入时替换为你自己的服务地址。
-
 ## 技术实现
 
 1. `index.ts` 负责插件注册与 OpenClaw 扩展入口声明。
@@ -58,5 +54,3 @@ openclaw plugins install /path/to/RHClaw-Channel
 
 ## 相关文档
 
-- [RHClaw-Channel 开源执行计划](../docs/RHClaw-Channel%E5%BC%80%E6%BA%90%E6%89%A7%E8%A1%8C%E8%AE%A1%E5%88%92.md)
-- 建议与 [../RHClaw-Desktop/README.md](../RHClaw-Desktop/README.md) 配合阅读，了解 Desktop 如何消费本插件源码或预打包 `.tgz`
