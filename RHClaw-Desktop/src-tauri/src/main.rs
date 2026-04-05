@@ -626,17 +626,6 @@ struct OpenClawConfigFilesList {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct OpenClawConfigBackupResult {
-    ok: bool,
-    backup_file_path: String,
-    backup_file_name: String,
-    backup_size_bytes: u64,
-    source_size_bytes: u64,
-    detail: String,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 struct OpenClawConfigRestoreResult {
     ok: bool,
     restored_from: String,
