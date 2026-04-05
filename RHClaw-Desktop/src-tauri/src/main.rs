@@ -46,7 +46,7 @@ const OPENCLAW_DEFAULT_HOMEBREW_BOTTLE_DOMAIN: &str =
     "https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles";
 const RHOPENCLAW_DEFAULT_SERVER_API_BASE_URL: &str = "http://127.0.0.1:3000/api/v1";
 const RHOPENCLAW_DESKTOP_UPDATER_PUBLIC_KEY: &str =
-    "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFGNEI0OTkzQkFCOENGQ0YKUldUUHo3aTZrMGxMSDJIVkYvNUhZNXV4eFJydVUvaERzWnpGS3ZuK0VZa1ZWZGZXVlQwSnpaelAK";
+    "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERBRTIzQTI3RkExQ0YyOTMKUldTVDhoejZKenJpMnRycm9FOG9CK0h3bW1JY0l6N1VHQytTd1BMR0orWGFvTHB3Y0RhVGQ2RHoK";
 const SKILLHUB_DEFAULT_SITE_URL: &str = "https://skillhub.tencent.com/";
 const SKILLHUB_DEFAULT_INSTALLER_URL: &str =
     "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh";
@@ -445,9 +445,12 @@ const STATE_SNAPSHOT_KEY: &str = "desktop-shell-state";
 const DEVICE_SECRET_SQLITE_KEY: &str = "device-token-secret";
 const KEYCHAIN_SERVICE_NAME: &str = "RHOpenClawDesktop";
 const KEYCHAIN_ACCOUNT_NAME: &str = "device-token";
+const MODEL_SECRET_KEYCHAIN_ACCOUNT_PREFIX: &str = "model-provider:";
+const GATEWAY_AUTH_TOKEN_KEYCHAIN_ACCOUNT_NAME: &str = "gateway-auth-token";
 const OPENCLAW_SECRET_EXEC_PROVIDER: &str = "rhdesktop_exec";
 const SECRET_RESOLVER_MODE_ARG: &str = "--resolve-secret-refs";
 const RHCLAW_DEVICE_TOKEN_ENV_NAME: &str = "RHCLAW_DEVICE_TOKEN";
+const GATEWAY_AUTH_TOKEN_SECRET_REF_ID: &str = "gateway/auth/token";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -506,6 +509,11 @@ struct SecretResolverResponse {
     values: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     errors: BTreeMap<String, SecretResolverItemError>,
+}
+
+enum SecretResolverTarget {
+    ModelProvider(String),
+    GatewayAuthToken,
 }
 
 #[derive(Deserialize)]
@@ -3026,19 +3034,20 @@ fn write_gateway_llm_config(args: GatewayLlmConfigArgs) -> Result<serde_json::Va
         cfg["secrets"]["defaults"] = serde_json::json!({});
     }
 
-    let file_provider_name = format!("{}_file", compat_prefix);
-    let secret_file_path = model_secret_file_path(&compat_prefix)?;
-    cfg["secrets"]["providers"][&file_provider_name] = serde_json::json!({
-        "source": "file",
-        "path": secret_file_path,
-        "mode": "singleValue",
+    let legacy_file_provider_name = format!("{}_file", compat_prefix);
+    let secret_ref_id = secret_ref_id_for_provider(&compat_prefix);
+    let resolver_command = resolve_secret_resolver_command_path()?;
+    cfg["secrets"]["providers"][OPENCLAW_SECRET_EXEC_PROVIDER] = serde_json::json!({
+        "source": "exec",
+        "command": resolver_command,
+        "args": [SECRET_RESOLVER_MODE_ARG],
+        "jsonOnly": true,
+        "timeoutMs": 3000,
+        "allowInsecurePath": true,
     });
-    // Migrate away from exec-based resolver to avoid repeated macOS keychain prompts.
+    cfg["secrets"]["defaults"]["exec"] = serde_json::json!(OPENCLAW_SECRET_EXEC_PROVIDER);
     if let Some(providers_obj) = cfg["secrets"]["providers"].as_object_mut() {
-        providers_obj.remove(OPENCLAW_SECRET_EXEC_PROVIDER);
-    }
-    if let Some(defaults_obj) = cfg["secrets"]["defaults"].as_object_mut() {
-        defaults_obj.remove("exec");
+        providers_obj.remove(&legacy_file_provider_name);
     }
 
     // OpenClaw model identifiers are lowercase
@@ -3070,9 +3079,9 @@ fn write_gateway_llm_config(args: GatewayLlmConfigArgs) -> Result<serde_json::Va
     if !providers.get(&compat_prefix).is_some_and(|v| v.is_object()) {
         let mut provider_obj = serde_json::json!({
             "apiKey": {
-                "source": "file",
-                "provider": &file_provider_name,
-                "id": "value"
+                "source": "exec",
+                "provider": OPENCLAW_SECRET_EXEC_PROVIDER,
+                "id": &secret_ref_id
             },
             "baseUrl": args.base_url,
             "models": []
@@ -3084,9 +3093,9 @@ fn write_gateway_llm_config(args: GatewayLlmConfigArgs) -> Result<serde_json::Va
     } else {
         providers[&compat_prefix]["baseUrl"] = serde_json::json!(args.base_url);
         providers[&compat_prefix]["apiKey"] = serde_json::json!({
-            "source": "file",
-            "provider": &file_provider_name,
-            "id": "value"
+            "source": "exec",
+            "provider": OPENCLAW_SECRET_EXEC_PROVIDER,
+            "id": &secret_ref_id
         });
         if !native {
             if !providers[&compat_prefix].get("api").is_some_and(|v| v.is_string()) {
@@ -3115,13 +3124,29 @@ fn write_gateway_llm_config(args: GatewayLlmConfigArgs) -> Result<serde_json::Va
     fs::write(&config_path, &serialized)
         .map_err(|e| format!("写入 openclaw.json 失败: {e}"))?;
 
+    let (restart_required, detail) = match execute_openclaw_command(&["secrets", "reload"], &[]) {
+        Ok(_) => (
+            false,
+            "已写入 OpenClaw SecretRef，并完成本地 secrets reload。".to_string(),
+        ),
+        Err(error) => (
+            true,
+            format!(
+                "已写入 OpenClaw SecretRef，但 secrets reload 失败，将回退为 Gateway 重启生效：{error}"
+            ),
+        ),
+    };
+
     Ok(serde_json::json!({
         "envPath": env_path.to_string_lossy(),
         "configPath": config_path.to_string_lossy(),
         "model": model_value,
         "baseUrl": args.base_url,
-        "secretRefProvider": &file_provider_name,
-        "secretRefId": "value",
+        "applyMode": "config-set",
+        "restartRequired": restart_required,
+        "detail": detail,
+        "secretRefProvider": OPENCLAW_SECRET_EXEC_PROVIDER,
+        "secretRefId": secret_ref_id,
     }))
 }
 
@@ -3834,42 +3859,417 @@ fn model_secret_file_path(provider: &str) -> Result<PathBuf, String> {
     Ok(dir.join(format!("provider-{}.key", provider.trim().to_ascii_lowercase())))
 }
 
-fn save_model_secret_to_native_keyring(provider: &str, secret: &str) -> Result<(), String> {
-    // Write directly to file (avoids macOS keychain authorization prompts)
-    let file_path = model_secret_file_path(provider)?;
-    if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    fs::write(&file_path, secret)
-        .map_err(|e| format!("failed to write model secret file: {e}"))?;
-    #[cfg(unix)]
-    {
-        let permissions = fs::Permissions::from_mode(0o600);
-        let _ = fs::set_permissions(&file_path, permissions);
-    }
-    Ok(())
+fn normalize_model_secret_provider(provider: &str) -> String {
+    provider.trim().to_ascii_lowercase()
 }
 
-fn load_model_secret_from_native_keyring(provider: &str) -> Result<String, String> {
-    // Read from file directly (avoids macOS keychain authorization prompts)
+fn secret_ref_id_for_provider(provider: &str) -> String {
+    format!("providers/{}/apiKey", normalize_model_secret_provider(provider))
+}
+
+fn gateway_auth_secret_ref() -> serde_json::Value {
+    serde_json::json!({
+        "source": "exec",
+        "provider": OPENCLAW_SECRET_EXEC_PROVIDER,
+        "id": GATEWAY_AUTH_TOKEN_SECRET_REF_ID,
+    })
+}
+
+fn resolve_secret_resolver_command_path() -> Result<String, String> {
+    std::env::current_exe()
+        .map(|path| path.to_string_lossy().to_string())
+        .map_err(|error| format!("无法确定 SecretResolver 可执行路径: {error}"))
+}
+
+fn ensure_secret_exec_provider_config(cfg: &mut serde_json::Value) -> Result<bool, String> {
+    let mut changed = false;
+
+    if !cfg.get("secrets").is_some_and(|v| v.is_object()) {
+        cfg["secrets"] = serde_json::json!({});
+        changed = true;
+    }
+    if !cfg["secrets"].get("providers").is_some_and(|v| v.is_object()) {
+        cfg["secrets"]["providers"] = serde_json::json!({});
+        changed = true;
+    }
+    if !cfg["secrets"].get("defaults").is_some_and(|v| v.is_object()) {
+        cfg["secrets"]["defaults"] = serde_json::json!({});
+        changed = true;
+    }
+
+    let resolver_command = resolve_secret_resolver_command_path()?;
+    let desired_provider = serde_json::json!({
+        "source": "exec",
+        "command": resolver_command,
+        "args": [SECRET_RESOLVER_MODE_ARG],
+        "jsonOnly": true,
+        "timeoutMs": 3000,
+        "allowInsecurePath": true,
+    });
+
+    if cfg["secrets"]["providers"]
+        .get(OPENCLAW_SECRET_EXEC_PROVIDER)
+        != Some(&desired_provider)
+    {
+        cfg["secrets"]["providers"][OPENCLAW_SECRET_EXEC_PROVIDER] = desired_provider;
+        changed = true;
+    }
+
+    if cfg["secrets"]["defaults"].get("exec").and_then(|v| v.as_str())
+        != Some(OPENCLAW_SECRET_EXEC_PROVIDER)
+    {
+        cfg["secrets"]["defaults"]["exec"] = serde_json::json!(OPENCLAW_SECRET_EXEC_PROVIDER);
+        changed = true;
+    }
+
+    Ok(changed)
+}
+
+fn remove_legacy_model_secret_file(provider: &str) {
     if let Ok(file_path) = model_secret_file_path(provider) {
         if file_path.exists() {
-            if let Ok(secret) = fs::read_to_string(&file_path) {
-                let trimmed = secret.trim().to_string();
-                if !trimmed.is_empty() {
-                    return Ok(trimmed);
+            let _ = fs::remove_file(file_path);
+        }
+    }
+}
+
+fn load_model_secret_from_legacy_file(provider: &str) -> Result<String, String> {
+    let file_path = model_secret_file_path(provider)?;
+    if !file_path.exists() {
+        return Err(format!("secret not found for provider: {provider}"));
+    }
+
+    let secret = fs::read_to_string(&file_path)
+        .map_err(|error| format!("failed to read legacy model secret file: {error}"))?;
+    let trimmed = secret.trim().to_string();
+    if trimmed.is_empty() {
+        return Err(format!("secret not found for provider: {provider}"));
+    }
+
+    Ok(trimmed)
+}
+
+#[cfg(target_os = "macos")]
+fn run_macos_security_command(args: &[&str]) -> Result<std::process::Output, String> {
+    Command::new("security")
+        .args(args)
+        .output()
+        .map_err(|error| format!("failed to run macOS security command: {error}"))
+}
+
+#[cfg(target_os = "macos")]
+fn read_macos_secure_store(account: &str) -> Result<String, String> {
+    let output = run_macos_security_command(&[
+        "find-generic-password",
+        "-s",
+        KEYCHAIN_SERVICE_NAME,
+        "-a",
+        account,
+        "-w",
+    ])?;
+
+    if output.status.success() {
+        let secret = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !secret.is_empty() {
+            return Ok(secret);
+        }
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("could not be found") {
+        return Err("secret not found in macOS secure store".to_string());
+    }
+
+    Err(format!(
+        "failed to read macOS secure store entry {account}: {}",
+        stderr.trim()
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn write_macos_secure_store(account: &str, secret: &str) -> Result<(), String> {
+    let output = run_macos_security_command(&[
+        "add-generic-password",
+        "-U",
+        "-A",
+        "-s",
+        KEYCHAIN_SERVICE_NAME,
+        "-a",
+        account,
+        "-w",
+        secret,
+    ])?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "failed to write macOS secure store entry {account}: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn load_macos_legacy_keyring_secret(account: &str) -> Result<String, String> {
+    let entry = keyring::Entry::new(KEYCHAIN_SERVICE_NAME, account)
+        .map_err(|error| format!("failed to access legacy macOS keyring entry {account}: {error}"))?;
+    match entry.get_password() {
+        Ok(secret) => {
+            let trimmed = secret.trim().to_string();
+            if trimmed.is_empty() {
+                Err(format!("legacy macOS keyring entry {account} is empty"))
+            } else {
+                Ok(trimmed)
+            }
+        }
+        Err(error) => Err(format!("failed to read legacy macOS keyring entry {account}: {error}")),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn migrate_macos_secret_entry_for_exec(account: &str) -> Result<bool, String> {
+    if read_macos_secure_store(account).is_ok() {
+        return Ok(false);
+    }
+
+    let secret = load_macos_legacy_keyring_secret(account)?;
+    write_macos_secure_store(account, &secret)?;
+    Ok(true)
+}
+
+#[cfg(target_os = "macos")]
+fn migrate_macos_exec_secret_store() -> Result<bool, String> {
+    let mut changed = false;
+
+    if let Some((_, config)) = read_openclaw_config_json() {
+        if config
+            .get("gateway")
+            .and_then(|value| value.get("auth"))
+            .and_then(|value| value.get("token"))
+            .and_then(|value| value.get("source"))
+            .and_then(|value| value.as_str())
+            == Some("exec")
+        {
+            changed |= migrate_macos_secret_entry_for_exec(GATEWAY_AUTH_TOKEN_KEYCHAIN_ACCOUNT_NAME)
+                .unwrap_or(false);
+        }
+
+        if let Some(providers) = config
+            .get("models")
+            .and_then(|value| value.get("providers"))
+            .and_then(|value| value.as_object())
+        {
+            for (provider_name, provider_config) in providers {
+                let matches_exec_ref = provider_config
+                    .get("apiKey")
+                    .and_then(|value| value.get("source"))
+                    .and_then(|value| value.as_str())
+                    == Some("exec");
+
+                if matches_exec_ref {
+                    let account = format!(
+                        "{MODEL_SECRET_KEYCHAIN_ACCOUNT_PREFIX}{}",
+                        normalize_model_secret_provider(provider_name)
+                    );
+                    changed |= migrate_macos_secret_entry_for_exec(&account).unwrap_or(false);
                 }
             }
         }
     }
 
-    Err(format!("secret not found for provider: {provider}"))
+    Ok(changed)
 }
 
-fn provider_from_secret_ref_id(id: &str) -> Option<&str> {
+#[cfg(target_os = "windows")]
+fn native_secure_store_entry(account: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(
+        KEYCHAIN_SERVICE_NAME,
+        account,
+    )
+    .map_err(|error| format!("failed to access native secure store entry {account}: {error}"))
+}
+
+#[cfg(target_os = "windows")]
+fn model_secret_keyring_entry(provider: &str) -> Result<keyring::Entry, String> {
+    let normalized = normalize_model_secret_provider(provider);
+    native_secure_store_entry(&format!("{MODEL_SECRET_KEYCHAIN_ACCOUNT_PREFIX}{normalized}"))
+}
+
+#[cfg(target_os = "windows")]
+fn gateway_auth_token_keyring_entry() -> Result<keyring::Entry, String> {
+    native_secure_store_entry(GATEWAY_AUTH_TOKEN_KEYCHAIN_ACCOUNT_NAME)
+}
+
+fn save_model_secret_to_native_keyring(provider: &str, secret: &str) -> Result<(), String> {
+    let normalized = normalize_model_secret_provider(provider);
+    let trimmed = secret.trim();
+    if trimmed.is_empty() {
+        return Err(format!("secret is empty for provider: {normalized}"));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        write_macos_secure_store(
+            &format!("{MODEL_SECRET_KEYCHAIN_ACCOUNT_PREFIX}{normalized}"),
+            trimmed,
+        )?;
+        remove_legacy_model_secret_file(&normalized);
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let entry = model_secret_keyring_entry(&normalized)?;
+        entry
+            .set_password(trimmed)
+            .map_err(|error| format!("failed to write model secret to native secure store: {error}"))?;
+        remove_legacy_model_secret_file(&normalized);
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let file_path = model_secret_file_path(&normalized)?;
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent).ok();
+        }
+        fs::write(&file_path, trimmed)
+            .map_err(|error| format!("failed to write model secret file: {error}"))?;
+        #[cfg(unix)]
+        {
+            let permissions = fs::Permissions::from_mode(0o600);
+            let _ = fs::set_permissions(&file_path, permissions);
+        }
+        return Ok(());
+    }
+}
+
+fn load_model_secret_from_native_keyring(provider: &str) -> Result<String, String> {
+    let normalized = normalize_model_secret_provider(provider);
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(secret) = read_macos_secure_store(&format!(
+            "{MODEL_SECRET_KEYCHAIN_ACCOUNT_PREFIX}{normalized}"
+        )) {
+            let trimmed = secret.trim().to_string();
+            if !trimmed.is_empty() {
+                return Ok(trimmed);
+            }
+        }
+
+        let legacy_secret = load_model_secret_from_legacy_file(&normalized)?;
+        save_model_secret_to_native_keyring(&normalized, &legacy_secret)
+            .map_err(|error| format!("failed to migrate legacy model secret to native secure store: {error}"))?;
+        return Ok(legacy_secret);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let entry = model_secret_keyring_entry(&normalized)?;
+        match entry.get_password() {
+            Ok(secret) => {
+                let trimmed = secret.trim().to_string();
+                if !trimmed.is_empty() {
+                    return Ok(trimmed);
+                }
+            }
+            Err(keyring::Error::NoEntry) => {}
+            Err(error) => {
+                return Err(format!(
+                    "failed to read model secret from native secure store: {error}"
+                ));
+            }
+        }
+
+        let legacy_secret = load_model_secret_from_legacy_file(&normalized)?;
+        save_model_secret_to_native_keyring(&normalized, &legacy_secret)
+            .map_err(|error| format!("failed to migrate legacy model secret to native secure store: {error}"))?;
+        return Ok(legacy_secret);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        load_model_secret_from_legacy_file(&normalized)
+    }
+}
+
+fn save_gateway_auth_token_to_native_keyring(secret: &str) -> Result<(), String> {
+    let trimmed = secret.trim();
+    if trimmed.is_empty() {
+        return Err("gateway auth token is empty".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        write_macos_secure_store(GATEWAY_AUTH_TOKEN_KEYCHAIN_ACCOUNT_NAME, trimmed)?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let entry = gateway_auth_token_keyring_entry()?;
+        entry
+            .set_password(trimmed)
+            .map_err(|error| format!("failed to write gateway auth token to native secure store: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = trimmed;
+        Err("gateway auth token secure storage is unsupported on this platform".to_string())
+    }
+}
+
+fn load_gateway_auth_token_from_native_keyring() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let secret = read_macos_secure_store(GATEWAY_AUTH_TOKEN_KEYCHAIN_ACCOUNT_NAME)?;
+        let trimmed = secret.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok(trimmed);
+        }
+        return Err("gateway auth token not found in native secure store".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let entry = gateway_auth_token_keyring_entry()?;
+        match entry.get_password() {
+            Ok(secret) => {
+                let trimmed = secret.trim().to_string();
+                if !trimmed.is_empty() {
+                    return Ok(trimmed);
+                }
+                Err("gateway auth token not found in native secure store".to_string())
+            }
+            Err(keyring::Error::NoEntry) => {
+                Err("gateway auth token not found in native secure store".to_string())
+            }
+            Err(error) => Err(format!(
+                "failed to read gateway auth token from native secure store: {error}"
+            )),
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Err("gateway auth token secure storage is unsupported on this platform".to_string())
+    }
+}
+
+fn secret_resolver_target_from_id(id: &str) -> Option<SecretResolverTarget> {
+    if id == GATEWAY_AUTH_TOKEN_SECRET_REF_ID {
+        return Some(SecretResolverTarget::GatewayAuthToken);
+    }
+
     let mut segments = id.split('/');
     match (segments.next(), segments.next(), segments.next(), segments.next()) {
-        (Some("providers"), Some(provider), Some("apiKey"), None) if !provider.trim().is_empty() => Some(provider),
+        (Some("providers"), Some(provider), Some("apiKey"), None) if !provider.trim().is_empty() => {
+            Some(SecretResolverTarget::ModelProvider(provider.trim().to_ascii_lowercase()))
+        }
         _ => None,
     }
 }
@@ -3895,7 +4295,7 @@ fn run_secret_resolver_mode() -> Result<(), String> {
     let mut errors = BTreeMap::new();
 
     for id in request.ids {
-        let Some(provider) = provider_from_secret_ref_id(&id) else {
+        let Some(target) = secret_resolver_target_from_id(&id) else {
             errors.insert(
                 id,
                 SecretResolverItemError {
@@ -3905,7 +4305,14 @@ fn run_secret_resolver_mode() -> Result<(), String> {
             continue;
         };
 
-        match load_model_secret_from_native_keyring(provider) {
+        let resolved = match &target {
+            SecretResolverTarget::ModelProvider(provider) => {
+                load_model_secret_from_native_keyring(provider)
+            }
+            SecretResolverTarget::GatewayAuthToken => load_gateway_auth_token_from_native_keyring(),
+        };
+
+        match resolved {
             Ok(secret) => {
                 values.insert(id, secret);
             }
@@ -7637,25 +8044,37 @@ fn ensure_gateway_service_installed() -> Result<bool, String> {
         .map(|payload| is_gateway_service_loaded(&payload))
         .unwrap_or(false);
 
+    #[cfg(target_os = "windows")]
+    let (service_loaded, force_reinstall) = if service_loaded {
+        let home = std::env::var("USERPROFILE").unwrap_or_default();
+        let gateway_cmd = PathBuf::from(&home).join(".openclaw").join("gateway.cmd");
+        if !gateway_cmd.exists() {
+            eprintln!("[rhopenclaw] gateway.cmd missing despite service.loaded=true, forcing reinstall");
+            (false, true)
+        } else {
+            (true, false)
+        }
+    } else {
+        (false, false)
+    };
+    #[cfg(not(target_os = "windows"))]
+    let force_reinstall = false;
+
     if service_loaded {
         return Ok(false);
     }
 
-    match execute_openclaw_command(&["gateway", "install"], &[]) {
+    let install_args: Vec<&str> = if force_reinstall {
+        vec!["gateway", "install", "--force"]
+    } else {
+        vec!["gateway", "install"]
+    };
+
+    match execute_openclaw_command(&install_args, &[]) {
         Ok(_) => Ok(true),
         Err(error) if is_recoverable_windows_onboard_failure(&error) => {
-            // schtasks access-denied — Desktop is running as normal user even though
-            // the NSIS installer used perMachine. Try UAC elevation so the scheduled
-            // task can be created. If the user accepts (or the system auto-approves),
-            // the task will be registered; gateway start can then use schtasks /Run.
-            eprintln!("[rhopenclaw] gateway install access-denied, retrying with UAC elevation");
-            if try_elevated_gateway_install() {
-                eprintln!("[rhopenclaw] UAC-elevated gateway install succeeded");
-                Ok(true)
-            } else {
-                eprintln!("[rhopenclaw] UAC-elevated gateway install skipped/failed (non-fatal): {error}");
-                Ok(false)
-            }
+            eprintln!("[rhopenclaw] gateway install: schtasks denied, Startup-folder fallback active");
+            Ok(true)
         }
         Err(error) => Err(error),
     }
@@ -7663,7 +8082,7 @@ fn ensure_gateway_service_installed() -> Result<bool, String> {
 
 /// Attempt `openclaw gateway install` via UAC elevation (Windows-only).
 /// Returns true if the elevated process exited successfully.
-fn try_elevated_gateway_install() -> bool {
+pub(crate) fn try_elevated_gateway_install() -> bool {
     #[cfg(not(target_os = "windows"))]
     return false;
 
@@ -7749,25 +8168,33 @@ pub(crate) fn start_openclaw_gateway_runtime(
             execute_openclaw_command(&["gateway", "start"], &[])?;
         }
         Err(error) if is_gateway_task_not_found_error(&error) => {
-            // schtasks /Run failed because the task doesn't exist (creation was
-            // denied during onboard). Try UAC-elevated install + retry start.
-            eprintln!("[rhopenclaw] gateway start: task not found, attempting UAC-elevated install");
-            if try_elevated_gateway_install() {
-                eprintln!("[rhopenclaw] UAC-elevated install succeeded, retrying gateway start");
-                execute_openclaw_command(&["gateway", "start"], &[])
-                    .map_err(|e| format!("Gateway 启动失败（提权后重试）: {e}"))?;
-            } else {
-                return Err(format!(
-                    "Gateway 计划任务不存在。请以管理员权限运行：openclaw gateway install\n原始错误: {error}"
-                ));
-            }
+            eprintln!("[rhopenclaw] gateway start: task not found, trying gateway restart (Startup fallback)");
+            execute_openclaw_command(&["gateway", "restart"], &[])
+                .map_err(|e| format!("Gateway 启动失败（restart fallback）: {e}"))?;
         }
         Err(error) => return Err(error),
     }
 
     let probe = poll_gateway_until_healthy(Duration::from_secs(60), Duration::from_millis(500));
     if !probe.running {
-        return Err(format!("Gateway 启动后仍未就绪: {}", probe.detail));
+        #[cfg(target_os = "windows")]
+        {
+            eprintln!(
+                "[rhopenclaw] gateway start succeeded but health poll failed ({}), attempting stop + restart cycle",
+                probe.detail
+            );
+            let _ = execute_openclaw_command(&["gateway", "stop"], &[]);
+            thread::sleep(Duration::from_secs(2));
+            let _ = execute_openclaw_command(&["gateway", "start"], &[]);
+            let retry_probe = poll_gateway_until_healthy(Duration::from_secs(30), Duration::from_millis(500));
+            if !retry_probe.running {
+                return Err(format!("Gateway 启动后仍未就绪: {}", retry_probe.detail));
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            return Err(format!("Gateway 启动后仍未就绪: {}", probe.detail));
+        }
     }
 
     wait_for_openclaw_health_check(Duration::from_secs(45), Duration::from_secs(2))?;
@@ -8186,6 +8613,10 @@ pub(crate) fn ensure_openclaw_gateway_config() -> Result<bool, String> {
 
     let mut modified = false;
 
+    if ensure_secret_exec_provider_config(&mut cfg)? {
+        modified = true;
+    }
+
     // Ensure gateway object exists
     if !cfg.get("gateway").is_some_and(|v| v.is_object()) {
         cfg["gateway"] = serde_json::json!({});
@@ -8206,6 +8637,55 @@ pub(crate) fn ensure_openclaw_gateway_config() -> Result<bool, String> {
     } else if gw["auth"].get("mode").and_then(|v| v.as_str()) != Some("token") {
         gw["auth"]["mode"] = serde_json::json!("token");
         modified = true;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(token) = gw
+            .get("auth")
+            .and_then(|value| value.get("token"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+        {
+            let _ = save_gateway_auth_token_to_native_keyring(&token);
+        } else if gw
+            .get("auth")
+            .and_then(|value| value.get("token"))
+            .and_then(|value| value.as_object())
+            .is_some()
+        {
+            if let Ok(token) = load_gateway_auth_token_from_native_keyring() {
+                gw["auth"]["token"] = serde_json::json!(token);
+                modified = true;
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(token) = gw
+            .get("auth")
+            .and_then(|value| value.get("token"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+        {
+            save_gateway_auth_token_to_native_keyring(&token)?;
+            gw["auth"]["token"] = gateway_auth_secret_ref();
+            modified = true;
+        } else if gw
+            .get("auth")
+            .and_then(|value| value.get("token"))
+            .and_then(|value| value.as_object())
+            != gateway_auth_secret_ref().as_object()
+        {
+            if load_gateway_auth_token_from_native_keyring().is_ok() {
+                gw["auth"]["token"] = gateway_auth_secret_ref();
+                modified = true;
+            }
+        }
     }
 
     // [Windows] OpenClaw CLI runs `icacls <path> /sid` to verify file-based
@@ -9630,6 +10110,15 @@ pub(crate) fn current_unix_ms() -> u128 {
 fn main() {
     if let Some(exit_code) = maybe_run_secret_resolver_mode() {
         std::process::exit(exit_code);
+    }
+
+    #[cfg(target_os = "macos")]
+    if let Err(error) = migrate_macos_exec_secret_store() {
+        eprintln!("[rhopenclaw] migrate_macos_exec_secret_store: {error}");
+    }
+
+    if let Err(error) = ensure_openclaw_gateway_config() {
+        eprintln!("[rhopenclaw] ensure_openclaw_gateway_config (startup): {error}");
     }
 
     tauri::Builder::default()
