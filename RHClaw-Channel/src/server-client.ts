@@ -426,7 +426,7 @@ export function createRHClawServerClient(config: RHClawChannelConfig): RHClawSer
       return undefined;
     }
 
-    const response = await fetch(buildControlPlaneUrl(baseUrl, "/api/v1/devices/register"), {
+    const response = await fetch(buildControlPlaneUrl(baseUrl, "/devices/register"), {
       method: "POST",
       headers: buildBaseHeaders(),
       body: JSON.stringify({

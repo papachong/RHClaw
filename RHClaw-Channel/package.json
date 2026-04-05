@@ -1,6 +1,6 @@
 {
   "name": "@ruhooai/rhclaw-channel",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "RHClaw Channel plugin for OpenClaw Gateway",
   "type": "module",
   "private": false,
