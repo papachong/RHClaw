@@ -1,9 +1,24 @@
+<div align="center">
+
+<img src="assets/logo.png" alt="RHClaw Logo" width="120" />
+
 # RHClaw
 
-[English](README.md) | 中文
+### 您的私有 AI 龙虾军团 🦐🦐
 
-RHClaw实现一键养虾，全自动本地离线包安装、自动配置官方OpenClaw，微信小程序打通。安全可靠，多虾协作，大脑共享，开始你的私有龙虾军团之旅吧！🦐🦐
-完整应用请查看[小爪龙虾官网](https://rhclaw.ruhooai.com)
+[![Build](https://img.shields.io/badge/Build-Passing-brightgreen?style=flat-square)](https://github.com/papachong/RHClaw/actions)
+[![Release](https://img.shields.io/badge/Release-v1.0.1-blue?style=flat-square)](https://github.com/papachong/RHClaw/releases)
+[![License](https://img.shields.io/badge/License-MIT-informational?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-9cf?style=flat-square)](https://rhclaw.ruhooai.com)
+[![Website](https://img.shields.io/badge/Website-rhclaw.ruhooai.com-orange?style=flat-square)](https://rhclaw.ruhooai.com)
+
+**一键养虾，全自动本地安装、配置官方OpenClaw，微信小程序打通。安全可靠，多虾协作，大脑共享，开始你的私有龙虾军团之旅吧！**
+
+[下载桌面端](https://rhclaw.ruhooai.com) · [快速开始](#快速开始) · [English](README.md)
+
+</div>
+
+---
 
 ## 当前模块
 

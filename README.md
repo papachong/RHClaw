@@ -1,9 +1,24 @@
+<div align="center">
+
+<img src="assets/logo.png" alt="RHClaw Logo" width="120" />
+
 # RHClaw
 
-[中文](README.zh-CN.md) | English
+### Your Private AI Lobster Army 🦐🦐
 
-RHClaw makes shrimp farming effortless — one-click fully offline installation, automatic OpenClaw configuration, and WeChat Mini Program integration. Secure, reliable, multi-agent collaboration with shared memory. Start your private lobster army today! 🦐🦐
-For the full application, visit the [RHClaw official website](https://rhclaw.ruhooai.com).
+[![Build](https://img.shields.io/badge/Build-Passing-brightgreen?style=flat-square)](https://github.com/papachong/RHClaw/actions)
+[![Release](https://img.shields.io/badge/Release-v1.0.1-blue?style=flat-square)](https://github.com/papachong/RHClaw/releases)
+[![License](https://img.shields.io/badge/License-MIT-informational?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-9cf?style=flat-square)](https://rhclaw.ruhooai.com)
+[![Website](https://img.shields.io/badge/Website-rhclaw.ruhooai.com-orange?style=flat-square)](https://rhclaw.ruhooai.com)
+
+**One-click setup with fully automated local installation and configuration for the official OpenClaw, seamlessly connected to the WeChat Mini Program. Secure and reliable, multi-lobster collaboration, shared brains — start your private lobster army journey today!**
+
+[Download Desktop](https://rhclaw.ruhooai.com) · [Quick Start](#quick-start) · [中文](README.zh-CN.md)
+
+</div>
+
+---
 
 ## Current Modules
 
