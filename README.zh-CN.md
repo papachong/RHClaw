@@ -20,6 +20,20 @@
 
 ---
 
+## 各端功能介绍
+
+- `RHClaw-Desktop/`：OpenClaw多平台离线包打包、安装、配置和管理的客户端。基于 Tauri + React 构建的桌面应用。
+- `RHClaw-Channel/`：OpenClaw Gateway 渠道插件，将 RHClaw 控制面协议桥接到 OpenClaw 运行时。
+- `RHClaw-Server/`：RHClaw服务端，通过RHClaw-Channel连接OpenClaw，负责消息路由，模型配置下发，设备绑定，套餐，订单等的管理。由于全面开源对用户安全影响非常大，所以有限开源：即感兴趣的个人或团队可以联系开源。
+- `RHClaw-IM/`：微信小程序端IM软件，指挥小龙虾干活绝对够用，有限开源。
+- `RHClaw-Admin/`：RHClaw管理后台，基于Server后台进行信息管理，有限开源。
+
+## 方案文档
+
+- [RHClaw整体解决方案](assets/docs/RHClaw整体解决方案.md)
+- [RHClaw-Desktop一键安装技术方案](assets/docs/RHClaw-Desktop一键安装技术方案.md)
+- [RHClaw-Channel开源执行计划](assets/docs/RHClaw-Channel开源执行计划.md)
+
 ## 产品截图
 
 <div align="center">
@@ -46,19 +60,6 @@
 	</table>
 </div>
 
-## 各端功能介绍
-
-- `RHClaw-Desktop/`：OpenClaw多平台离线包打包、安装、配置和管理的客户端。基于 Tauri + React 构建的桌面应用。
-- `RHClaw-Channel/`：OpenClaw Gateway 渠道插件，将 RHClaw 控制面协议桥接到 OpenClaw 运行时。
-- `RHClaw-Server/`：RHClaw服务端，通过RHClaw-Channel连接OpenClaw，负责消息路由，模型配置下发，设备绑定，套餐，订单等的管理。由于全面开源对用户安全影响非常大，所以有限开源：即感兴趣的个人或团队可以联系开源。
-- `RHClaw-IM/`：微信小程序端IM软件，指挥小龙虾干活绝对够用，有限开源。
-- `RHClaw-Admin/`：RHClaw管理后台，基于Server后台进行信息管理，有限开源。
-
-## 方案文档
-
-- [RHClaw整体解决方案](docs/RHClaw整体解决方案.md)
-- [RHClaw-Desktop一键安装技术方案](docs/RHClaw-Desktop一键安装技术方案.md)
-- [RHClaw-Channel开源执行计划](docs/RHClaw-Channel开源执行计划.md)
 
 ## 快速开始
 

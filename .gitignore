@@ -3,6 +3,8 @@
 
 # Internal planning docs (not part of open-source release)
 docs/
+!assets/docs/
+!assets/docs/**
 
 RHClaw-Desktop/node_modules/
 RHClaw-Desktop/dist/
