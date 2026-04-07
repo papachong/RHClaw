@@ -20,10 +20,45 @@
 
 ---
 
+## Product Screenshots
+
+<div align="center">
+	<table>
+		<tr>
+			<td align="center">
+				<img src="assets/screenshots/mobile-group-list.jpg" alt="Mini program group list screenshot" width="320" />
+				<br />
+				Mini program group list
+			</td>
+			<td align="center">
+				<img src="assets/screenshots/mobile-chat.jpg" alt="Mini program chat screenshot" width="320" />
+				<br />
+				Mini program chat
+			</td>
+		</tr>
+		<tr>
+			<td colspan="2" align="center">
+				<img src="assets/screenshots/desktop-workspace.jpg" alt="Desktop workspace screenshot" width="960" />
+				<br />
+				Desktop workspace
+			</td>
+		</tr>
+	</table>
+</div>
+
 ## Current Modules
 
 - `RHClaw-Desktop/`: Desktop client for packaging, installing, configuring, and managing the OpenClaw multi-platform offline bundle. Built with Tauri + React.
 - `RHClaw-Channel/`: An OpenClaw Gateway channel plugin that bridges the RHClaw control-plane protocol into the OpenClaw runtime.
+- `RHClaw-Server/`: RHClaw backend service. It connects to OpenClaw through RHClaw-Channel and handles message routing, model configuration delivery, device binding, subscriptions, and order management. This module is source-available on request rather than fully open-sourced due to security considerations.
+- `RHClaw-IM/`: WeChat Mini Program IM client for directing your lobsters in daily use. This module is source-available on request.
+- `RHClaw-Admin/`: RHClaw administration console built on top of the server backend for operational management. This module is source-available on request.
+
+## Solution Documents
+
+- [RHClaw Overall Solution](docs/RHClaw整体解决方案.md)
+- [RHClaw Desktop One-Click Installation Plan](docs/RHClaw-Desktop一键安装技术方案.md)
+- [RHClaw Channel Open Source Execution Plan](docs/RHClaw-Channel开源执行计划.md)
 
 ## Quick Start
 
